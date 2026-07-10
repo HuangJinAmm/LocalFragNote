@@ -1,0 +1,23 @@
+[package]
+name = "memos-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+memos-core = { path = "../core" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+ort = { version = "=2.0.0-rc.9", default-features = false, features = ["ndarray", "load-dynamic"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+ndarray = "0.16"
+ureq = "2"
+dirs = "5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

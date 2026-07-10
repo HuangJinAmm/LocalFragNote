@@ -1,0 +1,20 @@
+[package]
+name = "memos-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite = { version = "0.32", features = ["bundled"] }
+refinery = { version = "0.8", features = ["rusqlite"] }
+sqlite-vec = "0.1"
+moka = { version = "0.12", features = ["sync"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+comrak = { version = "0.24", default-features = false, features = ["shortcodes"] }
+regex = "1"
+unicode_categories = "0.1"
