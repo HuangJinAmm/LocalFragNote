@@ -8,6 +8,7 @@ import { useFilteredMemoStats } from "@/hooks/useFilteredMemoStats";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
+import { AiChatPanel } from "@/components/AiChat";
 
 const DESKTOP_EXPLORER_WIDTH_CLASS = "w-64";
 const DESKTOP_EXPLORER_CLASS_NAME = cn("sticky top-0 h-svh shrink-0 border-r border-border transition-all", DESKTOP_EXPLORER_WIDTH_CLASS);
@@ -48,6 +49,7 @@ const MainLayout = () => {
           <Outlet />
         </div>
       </div>
+      <AiChatPanel />
     </section>
   );
 };
