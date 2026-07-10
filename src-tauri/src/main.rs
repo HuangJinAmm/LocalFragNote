@@ -175,6 +175,9 @@ fn main() {
             commands::setting::get_instance_stats,
             commands::setting::get_storage_config,
             commands::setting::update_storage_config,
+            // ai chat
+            commands::ai_chat::ai_chat,
+            commands::ai_chat::ai_abort,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Tauri 应用时出错");

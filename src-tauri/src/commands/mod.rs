@@ -2,6 +2,7 @@
 //!
 //! 每个子模块对应一个领域：memo、attachment、reaction、memo_relation、setting
 
+pub mod ai_chat;
 pub mod attachment;
 pub mod memo;
 pub mod memo_relation;
