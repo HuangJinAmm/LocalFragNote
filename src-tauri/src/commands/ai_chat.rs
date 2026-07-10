@@ -1,6 +1,6 @@
 //! AI 聊天命令：agent 循环 + 流式推送 + 中断机制
 
-use crate::ai::provider::{load_providers, ProviderConfig};
+use crate::ai::provider::{load_providers, save_providers, ProviderConfig};
 use crate::ai::sse::read_sse_stream;
 use crate::ai::tools::{execute_tool, tool_definitions};
 use crate::error::{IpcError, IpcResult};
@@ -262,4 +262,22 @@ fn format_http_error(e: ureq::Error) -> String {
             format!("网络错误: {t}")
         }
     }
+}
+
+/// 列出所有已配置的 provider
+#[tauri::command]
+pub fn list_providers(state: tauri::State<'_, AppState>) -> IpcResult<Vec<ProviderConfig>> {
+    let store = state.store();
+    Ok(load_providers(&store))
+}
+
+/// 保存 provider 列表（全量替换）
+#[tauri::command]
+pub fn save_providers_cmd(
+    state: tauri::State<'_, AppState>,
+    providers: Vec<ProviderConfig>,
+) -> IpcResult<Vec<ProviderConfig>> {
+    let store = state.store();
+    save_providers(&store, &providers)?;
+    Ok(providers)
 }

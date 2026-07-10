@@ -178,6 +178,8 @@ fn main() {
             // ai chat
             commands::ai_chat::ai_chat,
             commands::ai_chat::ai_abort,
+            commands::ai_chat::list_providers,
+            commands::ai_chat::save_providers_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Tauri 应用时出错");
