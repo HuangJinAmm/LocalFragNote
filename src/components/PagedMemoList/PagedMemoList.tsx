@@ -138,7 +138,7 @@ const PagedMemoList = (props: Props) => {
   const showMemoEditor = props.showMemoEditor ?? false;
   const defaultCreateTime = useMemo(() => deriveDefaultCreateTimeFromFilters(filters), [filters]);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteMemos(
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useInfiniteMemos(
     {
       state: props.state || State.NORMAL,
       orderBy: props.orderBy || "create_time desc",
@@ -147,6 +147,10 @@ const PagedMemoList = (props: Props) => {
     },
     { enabled: props.enabled ?? true },
   );
+  const isError = !!error;
+  // 语义搜索 filter 形如 "semantic.search(\"...\")"；
+  // 当 embedding 生成失败（模型未下载/初始化错误）时，给出更友好的提示
+  const isSemanticSearch = typeof props.filter === "string" && props.filter.includes("semantic.search(");
 
   // Only show the skeleton once loading exceeds the delay, so fast loads don't flash it.
   const showSkeleton = useDelayedFlag(isLoading, SKELETON_LOADING_DELAY_MS);
@@ -255,8 +259,18 @@ const PagedMemoList = (props: Props) => {
     <MentionResolutionProvider contents={contents}>
       <div ref={layoutMeasureRef} className="w-full">
         <div className={cn("flex flex-col justify-start w-full mx-auto", useGrid ? "max-w-none" : "max-w-2xl")}>
-          {/* During initial load, show the skeleton only after the delay; render nothing before then to avoid a flash. */}
-          {isLoading ? (
+          {/* Error state: show a clear message instead of silently displaying an empty list.
+              语义搜索失败时给出更具体的提示（通常是 embedding 模型未就绪）。 */}
+          {isError ? (
+            <Placeholder
+              variant="empty"
+              message={
+                isSemanticSearch
+                  ? t("message.semantic-search-error")
+                  : t("message.search-error")
+              }
+            />
+          ) : isLoading ? (
             showSkeleton ? (
               useGrid ? (
                 <GridLoader />

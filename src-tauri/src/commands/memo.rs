@@ -1,6 +1,6 @@
 //! Memo 相关 IPC 命令
 
-use crate::error::IpcResult;
+use crate::error::{IpcError, IpcResult};
 use crate::state::AppState;
 use memos_core::markdown;
 use memos_core::memo::{CreateMemo, FindMemo, Memo, MemoLocation, UpdateMemo};
@@ -303,9 +303,12 @@ pub fn list_memo_timestamps(state: tauri::State<'_, AppState>) -> IpcResult<Memo
 }
 
 /// 生成文本的 embedding（JSON 字符串），供前端语义搜索查询使用
+/// 异步执行：模型下载与推理可能耗时数秒到数十秒，避免阻塞 Tauri 主线程
 #[tauri::command]
-pub fn embed_text(text: String) -> IpcResult<String> {
-    crate::embedding::embed_to_json(&text)
+pub async fn embed_text(text: String) -> IpcResult<String> {
+    tauri::async_runtime::spawn_blocking(move || crate::embedding::embed_to_json(&text))
+        .await
+        .map_err(|e| IpcError::Internal(format!("embed_text 任务失败: {e}")))?
 }
 
 // ---------- 辅助 ----------

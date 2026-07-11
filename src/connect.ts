@@ -246,10 +246,17 @@ export const memoServiceClient = {
     }
 
     // 语义搜索：先获取 embedding，再传给 list_memos
+    // 注意：KNN 返回的是固定 top_k 候选集，对它们施加 OFFSET 会直接跳过结果，
+    // 因此语义搜索不使用 offset 分页——一次性取足 top_k，前端按需切片。
     if (rustReq.semantic_query) {
       const embedding = await invoke<string>("embed_text", { text: rustReq.semantic_query });
       rustReq.vector_embedding = embedding;
-      rustReq.vector_top_k = limit;
+      // 取候选集上限：单页 limit 的 4 倍，给后续过滤（可见性/时间/tag 等）留余量
+      const candidateK = Math.max(limit * 4, 50);
+      rustReq.vector_top_k = candidateK;
+      // 语义搜索禁用 offset：KNN 结果固定，offset 会跳过全部
+      rustReq.offset = 0;
+      // limit 保留为前端请求的 pageSize，让 Rust 层再切片到本页大小
       delete rustReq.semantic_query;
     }
 
@@ -298,9 +305,11 @@ export const memoServiceClient = {
       toProtoMemo(m, attsByMemoId.get(m.id) ?? [], relsByMemoId.get(m.id) ?? []),
     );
     const nextOffset = offset + memos.length;
+    // 语义搜索：候选集一次性返回，无下一页
+    const isSemanticSearch = rustReq.vector_embedding !== undefined;
     return {
       memos,
-      nextPageToken: nextOffset < res.total ? String(nextOffset) : "",
+      nextPageToken: isSemanticSearch ? "" : (nextOffset < res.total ? String(nextOffset) : ""),
     };
   },
 
