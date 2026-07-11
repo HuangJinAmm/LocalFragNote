@@ -142,8 +142,14 @@ fn main() {
             app.manage(AppState {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
-                lan: lan_state,
+                lan: lan_state.clone(),
             });
+
+            // 启动 LAN 服务端 accept 循环
+            if let Some(lan_state) = lan_state {
+                let app_handle = app.handle().clone();
+                lan::server::spawn_accept_loop(lan_state, app_handle);
+            }
 
             // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
             // 首次启动会触发模型下载，后续仅为缺失 embedding 的 memo 生成
