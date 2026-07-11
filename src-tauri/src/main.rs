@@ -215,6 +215,19 @@ fn main() {
             commands::lan::lan_get_remote_memo,
             commands::lan::lan_get_remote_attachment,
             commands::lan::lan_copy_memo_to_local,
+            // review
+            commands::review::review_list_decks,
+            commands::review::review_create_deck,
+            commands::review::review_update_deck,
+            commands::review::review_delete_deck,
+            commands::review::review_list_cards,
+            commands::review::review_list_due_cards,
+            commands::review::review_delete_card,
+            commands::review::review_score_card,
+            commands::review::review_generate_cards,
+            commands::review::review_regenerate_card,
+            commands::review::review_deck_stats,
+            commands::review::review_check_new_memos,
         ])
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用时出错")
