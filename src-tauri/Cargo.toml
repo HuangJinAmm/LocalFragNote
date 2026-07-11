@@ -21,6 +21,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 iroh = "1"
 iroh-mdns-address-lookup = "0.4"
 anyhow = "1"
+thiserror.workspace = true
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]

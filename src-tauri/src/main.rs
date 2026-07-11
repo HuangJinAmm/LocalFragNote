@@ -6,6 +6,7 @@ mod ai;
 mod embedding;
 mod error;
 mod file_storage;
+pub mod lan;
 mod protocol;
 mod state;
 mod thumbnail;

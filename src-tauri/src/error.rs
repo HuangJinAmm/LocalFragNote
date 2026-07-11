@@ -20,6 +20,8 @@ pub enum IpcError {
     Io(String),
     /// 参数非法
     BadRequest(String),
+    /// LAN 模块错误
+    Lan(String),
 }
 
 impl fmt::Display for IpcError {
@@ -31,6 +33,7 @@ impl fmt::Display for IpcError {
             IpcError::Internal(msg) => write!(f, "Internal: {msg}"),
             IpcError::Io(msg) => write!(f, "Io: {msg}"),
             IpcError::BadRequest(msg) => write!(f, "BadRequest: {msg}"),
+            IpcError::Lan(msg) => write!(f, "Lan: {msg}"),
         }
     }
 }
@@ -59,6 +62,12 @@ impl From<std::io::Error> for IpcError {
 impl From<serde_json::Error> for IpcError {
     fn from(e: serde_json::Error) -> Self {
         IpcError::Internal(format!("serde: {e}"))
+    }
+}
+
+impl From<crate::lan::LanError> for IpcError {
+    fn from(e: crate::lan::LanError) -> Self {
+        IpcError::Lan(e.to_string())
     }
 }
 
