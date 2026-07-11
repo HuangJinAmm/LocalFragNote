@@ -24,6 +24,47 @@
     "save": "保存",
     "cancel": "取消"
   },
+  "lan": {
+    "discovery": {
+      "title": "发现局域网用户",
+      "empty": "未发现局域网用户，请确认在同一网络且对端已启动应用",
+      "online": "在线",
+      "offline": "离线"
+    },
+    "peer": {
+      "publicMemos": "公开笔记",
+      "copyPeerId": "复制 Peer ID",
+      "peerIdCopied": "Peer ID 已复制"
+    },
+    "memo": {
+      "copyToLocal": "复制到本地",
+      "copySuccess": "已复制到本地",
+      "copyConfirm": "复制此笔记到本地？将创建为新笔记，不带原作者关联。",
+      "copyFailed": "复制失败",
+      "notFound": "该笔记已不存在",
+      "notPublic": "对方未向你公开此笔记",
+      "loadFailed": "加载远端笔记失败"
+    },
+    "settings": {
+      "displayName": "展示名",
+      "peerId": "Peer ID",
+      "aclRules": "访问控制",
+      "statusRunning": "运行中（mDNS 已启用）",
+      "statusError": "错误",
+      "accessMode": "访问模式",
+      "defaultOpen": "默认开放",
+      "restrictTags": "按标签限制",
+      "completelyBlocked": "完全拒绝",
+      "allowTags": "允许的标签",
+      "denyTags": "拒绝的标签",
+      "save": "保存",
+      "saved": "已保存"
+    },
+    "discover": {
+      "button": "发现",
+      "tooltip": "发现局域网用户"
+    }
+  },
   "about": {
     "blogs": "博客",
     "description": "Memos 是一个隐私优先、轻量级的笔记解决方案，可以轻松捕捉和分享您的想法。",
@@ -805,6 +846,9 @@
       "refresh": "刷新",
       "title": "资源统计",
       "unknown": "未知"
+    },
+    "lan-share": {
+      "label": "局域网分享"
     }
   },
   "tag": {

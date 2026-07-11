@@ -24,6 +24,47 @@
     "save": "Save",
     "cancel": "Cancel"
   },
+  "lan": {
+    "discovery": {
+      "title": "Discover LAN Users",
+      "empty": "No LAN users found. Ensure other devices are on the same network and running the app.",
+      "online": "Online",
+      "offline": "Offline"
+    },
+    "peer": {
+      "publicMemos": "Public memos",
+      "copyPeerId": "Copy Peer ID",
+      "peerIdCopied": "Peer ID copied"
+    },
+    "memo": {
+      "copyToLocal": "Copy to local",
+      "copySuccess": "Copied to local",
+      "copyConfirm": "Copy this memo to local? It will be created as a new private memo without author attribution.",
+      "copyFailed": "Copy failed",
+      "notFound": "This memo no longer exists",
+      "notPublic": "This memo is no longer public",
+      "loadFailed": "Failed to load remote memo"
+    },
+    "settings": {
+      "displayName": "Display name",
+      "peerId": "Peer ID",
+      "aclRules": "Access control",
+      "statusRunning": "Running (mDNS enabled)",
+      "statusError": "Error",
+      "accessMode": "Access mode",
+      "defaultOpen": "Default open",
+      "restrictTags": "Restrict by tags",
+      "completelyBlocked": "Completely blocked",
+      "allowTags": "Allow tags",
+      "denyTags": "Deny tags",
+      "save": "Save",
+      "saved": "Saved"
+    },
+    "discover": {
+      "button": "Discover",
+      "tooltip": "Discover LAN users"
+    }
+  },
   "about": {
     "blogs": "Blogs",
     "description": "A privacy-first, lightweight note-taking service. Easily capture and share your great thoughts.",
@@ -871,6 +912,9 @@
       "last-updated": "Last updated {{ago}}",
       "refresh": "Refresh",
       "load-error": "Failed to load statistics"
+    },
+    "lan-share": {
+      "label": "LAN Share"
     }
   },
   "tag": {
