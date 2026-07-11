@@ -1,6 +1,8 @@
+import { XIcon } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import MobileHeader from "@/components/MobileHeader";
+import { Routes } from "@/router";
 import SectionMenuItem from "@/components/Settings/SectionMenuItem";
 import {
   DEFAULT_SETTING_SECTION,
@@ -23,6 +25,7 @@ const isCommitSha = (commit: string) => /^[0-9a-f]{7,40}$/i.test(commit);
 const Setting = () => {
   const t = useTranslate();
   const sm = useMediaQuery("sm");
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useCurrentUser();
   const { profile, fetchSettings } = useInstance();
@@ -82,6 +85,15 @@ const Setting = () => {
     <section className="@container w-full max-w-5xl min-h-full flex flex-col justify-start items-start sm:pt-3 md:pt-6 pb-8">
       {!sm && <MobileHeader />}
       <div className="w-full px-4 sm:px-6">
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => navigate(Routes.HOME)}
+            className="size-8 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={t("common.close")}
+          >
+            <XIcon className="size-4" />
+          </button>
+        </div>
         <div className="w-full border border-border flex flex-row justify-start items-start px-4 py-3 rounded-xl bg-background text-muted-foreground">
           {sm && (
             <div className="flex flex-col justify-start items-start w-40 h-auto shrink-0 py-2">
