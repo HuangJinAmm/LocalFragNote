@@ -916,6 +916,9 @@
     },
     "lan-share": {
       "label": "LAN Share"
+    },
+    "review": {
+      "label": "Review"
     }
   },
   "tag": {
@@ -943,6 +946,7 @@
     "upload-attachment": "Upload Attachment(s)"
   },
   "review": {
+    "nav-title": "Review",
     "again": "Again",
     "answer": "Answer",
     "back-to-decks": "Back to Decks",
@@ -976,6 +980,13 @@
     "due": "Due",
     "state": "State",
     "reps": "Reps",
-    "cards": "Cards"
+    "cards": "Cards",
+    "ai-provider": "AI Provider",
+    "ai-provider-desc": "Provider for card generation (empty=use default)",
+    "daily-new-card-limit": "Daily New Card Limit",
+    "daily-new-card-limit-desc": "Max new cards to learn per day (0=unlimited)",
+    "default-cards-per-memo": "Default Cards per Memo",
+    "default-cards-per-memo-desc": "Default card generation limit per memo",
+    "use-default": "Use Default"
   }
 }

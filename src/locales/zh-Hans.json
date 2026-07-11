@@ -414,6 +414,7 @@
     "unused-resources": "未使用资源"
   },
   "review": {
+    "nav-title": "回顾",
     "edit-deck": "编辑牌组",
     "create-deck": "创建牌组",
     "deck-name": "牌组名称",
@@ -427,7 +428,34 @@
     "generate-cards": "生成卡片",
     "generating": "正在生成卡片...",
     "generated": "已生成 {{count}} 张卡片",
-    "errors": "个错误"
+    "errors": "个错误",
+    "confirm-delete-card": "删除该卡片？",
+    "no-cards": "该牌组还没有卡片。",
+    "front": "正面",
+    "card-type": "类型",
+    "angle": "考核点",
+    "due": "到期",
+    "state": "状态",
+    "reps": "次数",
+    "cards": "卡片",
+    "again": "忘了",
+    "answer": "答案",
+    "back-to-decks": "返回牌组列表",
+    "click-to-flip": "点击翻面",
+    "easy": "简单",
+    "good": "记得",
+    "hard": "困难",
+    "regenerate-angle": "换角度",
+    "retention": "掌握率",
+    "reviewed": "已复习",
+    "session-complete": "复习完成！",
+    "ai-provider": "AI Provider",
+    "ai-provider-desc": "用于生成卡片的 AI（空=使用默认）",
+    "daily-new-card-limit": "每日新卡上限",
+    "daily-new-card-limit-desc": "每天最多学习的新卡数（0=不限制）",
+    "default-cards-per-memo": "默认每条笔记卡片数",
+    "default-cards-per-memo-desc": "生成卡片时每条笔记的默认上限",
+    "use-default": "使用默认"
   },
   "router": {
     "back-to-top": "回到顶部",
@@ -865,6 +893,9 @@
     },
     "lan-share": {
       "label": "局域网分享"
+    },
+    "review": {
+      "label": "回顾"
     }
   },
   "tag": {

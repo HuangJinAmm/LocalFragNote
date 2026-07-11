@@ -1,5 +1,5 @@
 // 本地应用 Settings：只保留 4 个 section
-import { BarChart3Icon, CogIcon, HardDriveIcon, LibraryIcon, RadioIcon, TagsIcon, UserIcon, type LucideIcon } from "lucide-react";
+import { BarChart3Icon, BookOpenIcon, CogIcon, HardDriveIcon, LibraryIcon, RadioIcon, TagsIcon, UserIcon, type LucideIcon } from "lucide-react";
 import { type ComponentType } from "react";
 import MemoRelatedSettings from "@/components/Settings/MemoRelatedSettings";
 import MyAccountSection from "@/components/Settings/MyAccountSection";
@@ -8,6 +8,7 @@ import LanShareSection from "@/components/Settings/LanShareSection";
 import ResourceStatsSection from "@/components/Settings/ResourceStatsSection";
 import StorageSection from "@/components/Settings/StorageSection";
 import TagsSection from "@/components/Settings/TagsSection";
+import ReviewSection from "@/components/Settings/ReviewSection";
 import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
 
 export type SettingSectionKey =
@@ -17,7 +18,8 @@ export type SettingSectionKey =
   | "tags"
   | "storage"
   | "resource-stats"
-  | "lan-share";
+  | "lan-share"
+  | "review";
 
 type SettingSectionScope = "basic" | "admin";
 
@@ -79,6 +81,13 @@ export const SETTINGS_SECTIONS: SettingSectionDefinition[] = [
     labelKey: "setting.lan-share.label",
     icon: RadioIcon,
     component: LanShareSection,
+  },
+  {
+    key: "review",
+    scope: "basic",
+    labelKey: "setting.review.label",
+    icon: BookOpenIcon,
+    component: ReviewSection,
   },
 ];
 
