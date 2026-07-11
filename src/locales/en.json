@@ -129,6 +129,7 @@
     "attachments": "Attachments",
     "auto-expand": "Auto expand",
     "avatar": "Avatar",
+    "back": "Back",
     "basic": "Basic",
     "beta": "Beta",
     "calendar": "Calendar",
@@ -940,5 +941,19 @@
     "select-visibility": "Visibility",
     "tags": "Tags",
     "upload-attachment": "Upload Attachment(s)"
+  },
+  "review": {
+    "again": "Again",
+    "answer": "Answer",
+    "back-to-decks": "Back to Decks",
+    "card-type": "Card Type",
+    "click-to-flip": "Click to flip",
+    "easy": "Easy",
+    "good": "Good",
+    "hard": "Hard",
+    "regenerate-angle": "Regenerate Angle",
+    "retention": "Retention",
+    "reviewed": "Reviewed",
+    "session-complete": "Session Complete"
   }
 }
