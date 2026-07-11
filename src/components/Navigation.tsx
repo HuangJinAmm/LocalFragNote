@@ -1,10 +1,9 @@
-import { LibraryIcon, PaperclipIcon } from "lucide-react";
+import { CompassIcon, LibraryIcon, PaperclipIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
 import { useTranslate } from "@/utils/i18n";
-import DiscoverButton from "./MemoEditor/Toolbar/DiscoverButton";
 import MemosLogo from "./MemosLogo";
 import UserMenu from "./UserMenu";
 
@@ -36,9 +35,15 @@ const Navigation = (props: Props) => {
     title: t("common.attachments"),
     icon: <PaperclipIcon className="w-6 h-auto shrink-0" />,
   };
+  const discoverNavLink: NavLinkItem = {
+    id: "header-discover",
+    path: Routes.DISCOVER,
+    title: t("lan.discover.button"),
+    icon: <CompassIcon className="w-6 h-auto shrink-0" />,
+  };
 
-  // 本地单用户应用：主导航仅包含 home 和 attachments
-  const primaryNavLinks: NavLinkItem[] = [homeNavLink, attachmentsNavLink];
+  // 本地单用户应用：主导航包含 home、attachments 和 discover
+  const primaryNavLinks: NavLinkItem[] = [homeNavLink, attachmentsNavLink, discoverNavLink];
 
   return (
     <header className={cn("w-full h-full overflow-auto flex flex-col justify-between items-start gap-4", className)}>
@@ -79,7 +84,6 @@ const Navigation = (props: Props) => {
               {!props.collapsed && <span className="ml-3 truncate">{navLink.title}</span>}
             </NavLink>
           ))}
-          <DiscoverButton collapsed={collapsed} />
         </TooltipProvider>
       </div>
       <div className={cn("w-full flex flex-col justify-end", props.collapsed ? "items-center" : "items-start pl-3")}>

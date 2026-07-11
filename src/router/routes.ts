@@ -4,6 +4,7 @@ export const ROUTES = {
   ATTACHMENTS: "/attachments",
   ARCHIVED: "/archived",
   SETTING: "/setting",
+  DISCOVER: "/discover",
 } as const;
 
 export type RouteKey = keyof typeof ROUTES;
