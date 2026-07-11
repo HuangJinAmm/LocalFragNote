@@ -10,12 +10,15 @@ pub mod protocol;
 pub mod server;
 
 use iroh::Endpoint;
+use iroh_mdns_address_lookup::MdnsAddressLookup;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// 局域网发现运行时状态
 pub struct LanState {
     pub endpoint: Endpoint,
+    /// mDNS 地址查找服务句柄，用于订阅发现事件
+    pub mdns: MdnsAddressLookup,
     /// mDNS 发现的 peer 缓存：peer_id → PeerInfo
     pub peers: RwLock<Vec<PeerInfo>>,
     /// 本机展示名

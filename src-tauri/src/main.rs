@@ -148,7 +148,9 @@ fn main() {
             // 启动 LAN 服务端 accept 循环
             if let Some(lan_state) = lan_state {
                 let app_handle = app.handle().clone();
-                lan::server::spawn_accept_loop(lan_state, app_handle);
+                lan::server::spawn_accept_loop(lan_state.clone(), app_handle.clone());
+                // 启动 mDNS 发现代理，订阅 DiscoveryEvent 更新 peers 缓存并通知前端
+                lan::endpoint::spawn_mdns_discovery_loop(lan_state, app_handle);
             }
 
             // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
