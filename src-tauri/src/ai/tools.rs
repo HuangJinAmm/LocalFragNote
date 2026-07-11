@@ -59,6 +59,21 @@ pub fn tool_definitions() -> Vec<Value> {
                 "parameters": { "type": "object", "properties": {} }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "list_memos_by_tag",
+                "description": "List memos that contain ALL specified tags. Returns memo content for card generation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags to filter (memo must contain ALL)" },
+                        "limit": { "type": "number", "description": "Max results, default 50" }
+                    },
+                    "required": ["tags"]
+                }
+            }
+        }),
     ]
 }
 
@@ -69,6 +84,7 @@ pub fn execute_tool(name: &str, args: &Value, store: &Store) -> memos_core::Core
         "get_memo" => execute_get_memo(args, store),
         "create_memo" => execute_create_memo(args, store),
         "list_tags" => execute_list_tags(store),
+        "list_memos_by_tag" => execute_list_memos_by_tag(args, store),
         _ => Err(memos_core::CoreError::Other(format!("未知工具: {name}"))),
     }
 }
@@ -193,6 +209,52 @@ fn execute_list_tags(store: &Store) -> memos_core::CoreResult<Value> {
     Ok(json!({ "tags": tags }))
 }
 
+fn execute_list_memos_by_tag(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if tags.is_empty() {
+        return Ok(json!({ "memos": [] }));
+    }
+
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .map(|n| n as i32)
+        .unwrap_or(50)
+        .min(200)
+        .max(1) as i32;
+
+    let find = FindMemo {
+        tag_search: tags.clone(),
+        row_status: Some(RowStatus::Normal),
+        limit: Some(limit),
+        ..Default::default()
+    };
+
+    let memos = store.with_conn(|c| memos_core::memo::list(c, &find))?;
+    let result: Vec<Value> = memos
+        .iter()
+        .map(|m| {
+            json!({
+                "uid": m.uid,
+                "content": m.content,
+                "tags": markdown::extract_tags(&m.content),
+                "created_ts": m.created_ts,
+                "updated_ts": m.updated_ts,
+            })
+        })
+        .collect();
+    Ok(json!({ "memos": result }))
+}
+
 /// 生成 16 字符 hex ID
 fn uuid_like() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -230,7 +292,7 @@ mod tests {
     #[test]
     fn test_tool_definitions_count() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 4);
+        assert_eq!(defs.len(), 5);
         let names: Vec<&str> = defs
             .iter()
             .map(|d| d["function"]["name"].as_str().unwrap())
@@ -239,6 +301,7 @@ mod tests {
         assert!(names.contains(&"get_memo"));
         assert!(names.contains(&"create_memo"));
         assert!(names.contains(&"list_tags"));
+        assert!(names.contains(&"list_memos_by_tag"));
     }
 
     #[test]
