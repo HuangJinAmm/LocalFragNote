@@ -216,6 +216,22 @@ fn main() {
             commands::lan::lan_get_remote_attachment,
             commands::lan::lan_copy_memo_to_local,
         ])
-        .run(tauri::generate_context!())
-        .expect("运行 Tauri 应用时出错");
+        .build(tauri::generate_context!())
+        .expect("构建 Tauri 应用时出错")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // 清理 LAN 模块：发送 shutdown 信号 + 关闭 endpoint
+                let state = app_handle.state::<AppState>();
+                if let Ok(lan_state) = state.lan() {
+                    let _ = lan_state.shutdown_tx.send(true);
+                    let endpoint = lan_state.endpoint.clone();
+                    // 在 runtime 中异步关闭 endpoint（非阻塞，不延迟退出）
+                    tauri::async_runtime::spawn(async move {
+                        let _ = endpoint.close().await;
+                        tracing::info!("LAN endpoint closed");
+                    });
+                    tracing::info!("LAN shutdown signal sent");
+                }
+            }
+        });
 }

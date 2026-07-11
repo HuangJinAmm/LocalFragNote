@@ -29,9 +29,18 @@ type HandlerResult = Result<ResponseData, (u16, String)>;
 /// 启动 accept 循环，在后台 task 中被动接收对端连接
 pub fn spawn_accept_loop(state: Arc<LanState>, app_handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut shutdown_rx = state.shutdown_tx.subscribe();
+        tracing::info!("LAN accept loop started");
+
         loop {
-            match state.endpoint.accept().await {
-                Some(incoming) => {
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => {
+                    tracing::info!("LAN accept loop shutting down");
+                    break;
+                }
+                incoming = state.endpoint.accept() => {
+                    let Some(incoming) = incoming else { break };
                     let state = state.clone();
                     let app = app_handle.clone();
                     tokio::spawn(async move {
@@ -40,9 +49,10 @@ pub fn spawn_accept_loop(state: Arc<LanState>, app_handle: tauri::AppHandle) {
                         }
                     });
                 }
-                None => break,
             }
         }
+
+        tracing::info!("LAN accept loop terminated");
     });
 }
 

@@ -5,7 +5,6 @@ import { useTranslate } from "@/utils/i18n";
 import { validationService } from "../services";
 import { useEditorContext, useEditorSelector } from "../state";
 import type { EditorToolbarProps } from "../types";
-import DiscoverButton from "./DiscoverButton";
 import InsertMenu from "./InsertMenu";
 import VisibilitySelector from "./VisibilitySelector";
 
@@ -54,7 +53,6 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
           onToggleFormattingToolbar={onToggleFormattingToolbar}
         />
         <VisibilitySelector value={visibility} onChange={handleVisibilityChange} />
-        <DiscoverButton />
       </div>
 
       <div className="flex flex-row justify-end items-center gap-2">

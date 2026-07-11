@@ -69,11 +69,13 @@ pub async fn init_lan_state(data_dir: &Path) -> Result<Arc<LanState>, LanError> 
     tracing::info!("LAN mDNS address lookup registered");
 
     let display_name = DEFAULT_DISPLAY_NAME.to_string();
+    let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
     let state = Arc::new(LanState {
         endpoint,
         mdns,
         peers: RwLock::new(Vec::new()),
         display_name: RwLock::new(display_name),
+        shutdown_tx,
     });
 
     Ok(state)
@@ -102,63 +104,72 @@ pub fn spawn_mdns_discovery_loop(state: Arc<LanState>, app_handle: tauri::AppHan
         use tokio_stream::StreamExt;
 
         let mut events = state.mdns.subscribe().await;
+        let mut shutdown_rx = state.shutdown_tx.subscribe();
         tracing::info!("LAN mDNS discovery loop started");
 
-        while let Some(event) = events.next().await {
-            let changed = match event {
-                DiscoveryEvent::Discovered { endpoint_info, .. } => {
-                    let peer_id = endpoint_info.endpoint_id.to_string();
-                    // display_name 暂用 peer_id 前缀作为占位，
-                    // 前端可按需调用 lan_get_remote_profile 获取真实展示名
-                    let display_name = peer_id_chars_prefix(&peer_id, 8);
-                    let addrs: Vec<String> = endpoint_info
-                        .data
-                        .ip_addrs()
-                        .map(|sa| sa.to_string())
-                        .collect();
-                    let relay_url = endpoint_info
-                        .data
-                        .relay_urls()
-                        .next()
-                        .map(|u| u.to_string());
-                    let now = now_epoch_secs();
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => {
+                    tracing::info!("LAN mDNS discovery loop shutting down");
+                    break;
+                }
+                event = events.next() => {
+                    let Some(event) = event else { break };
+                    let changed = match event {
+                        DiscoveryEvent::Discovered { endpoint_info, .. } => {
+                            let peer_id = endpoint_info.endpoint_id.to_string();
+                            let display_name = peer_id_chars_prefix(&peer_id, 8);
+                            let addrs: Vec<String> = endpoint_info
+                                .data
+                                .ip_addrs()
+                                .map(|sa| sa.to_string())
+                                .collect();
+                            let relay_url = endpoint_info
+                                .data
+                                .relay_urls()
+                                .next()
+                                .map(|u| u.to_string());
+                            let now = now_epoch_secs();
 
-                    let mut peers = state.peers.write().await;
-                    let info = PeerInfo {
-                        peer_id: peer_id.clone(),
-                        display_name,
-                        addrs,
-                        relay_url,
-                        last_seen: now,
+                            let mut peers = state.peers.write().await;
+                            let info = PeerInfo {
+                                peer_id: peer_id.clone(),
+                                display_name,
+                                addrs,
+                                relay_url,
+                                last_seen: now,
+                            };
+                            if let Some(existing) = peers.iter_mut().find(|p| p.peer_id == peer_id) {
+                                *existing = info;
+                            } else {
+                                peers.push(info);
+                            }
+                            tracing::debug!(%peer_id, "LAN mDNS discovered peer");
+                            true
+                        }
+                        DiscoveryEvent::Expired { endpoint_id } => {
+                            let peer_id = endpoint_id.to_string();
+                            let mut peers = state.peers.write().await;
+                            let before = peers.len();
+                            peers.retain(|p| p.peer_id != peer_id);
+                            let removed = before != peers.len();
+                            if removed {
+                                tracing::debug!(%peer_id, "LAN mDNS peer expired");
+                            }
+                            removed
+                        }
+                        _ => false,
                     };
-                    if let Some(existing) = peers.iter_mut().find(|p| p.peer_id == peer_id) {
-                        *existing = info;
-                    } else {
-                        peers.push(info);
-                    }
-                    tracing::debug!(%peer_id, "LAN mDNS discovered peer");
-                    true
-                }
-                DiscoveryEvent::Expired { endpoint_id } => {
-                    let peer_id = endpoint_id.to_string();
-                    let mut peers = state.peers.write().await;
-                    let before = peers.len();
-                    peers.retain(|p| p.peer_id != peer_id);
-                    let removed = before != peers.len();
-                    if removed {
-                        tracing::debug!(%peer_id, "LAN mDNS peer expired");
-                    }
-                    removed
-                }
-                _ => false,
-            };
 
-            if changed {
-                let _ = app_handle.emit("lan:peers-changed", ());
+                    if changed {
+                        let _ = app_handle.emit("lan:peers-changed", ());
+                    }
+                }
             }
         }
 
-        tracing::warn!("LAN mDNS discovery loop terminated (event stream closed)");
+        tracing::info!("LAN mDNS discovery loop terminated");
     });
 }
 

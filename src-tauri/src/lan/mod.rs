@@ -22,6 +22,8 @@ pub struct LanState {
     pub peers: RwLock<Vec<PeerInfo>>,
     /// 本机展示名
     pub display_name: RwLock<String>,
+    /// 关闭信号：app 退出时发送 true，所有后台 task 据此退出
+    pub shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 /// 发现到的 peer 信息

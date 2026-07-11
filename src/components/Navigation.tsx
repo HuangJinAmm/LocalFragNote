@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
 import { useTranslate } from "@/utils/i18n";
+import DiscoverButton from "./MemoEditor/Toolbar/DiscoverButton";
 import MemosLogo from "./MemosLogo";
 import UserMenu from "./UserMenu";
 
@@ -78,6 +79,7 @@ const Navigation = (props: Props) => {
               {!props.collapsed && <span className="ml-3 truncate">{navLink.title}</span>}
             </NavLink>
           ))}
+          <DiscoverButton collapsed={collapsed} />
         </TooltipProvider>
       </div>
       <div className={cn("w-full flex flex-col justify-end", props.collapsed ? "items-center" : "items-start pl-3")}>
