@@ -22,6 +22,8 @@ pub enum IpcError {
     BadRequest(String),
     /// LAN 模块错误
     Lan(String),
+    /// 回顾模块错误
+    Review(String),
 }
 
 impl fmt::Display for IpcError {
@@ -34,6 +36,7 @@ impl fmt::Display for IpcError {
             IpcError::Io(msg) => write!(f, "Io: {msg}"),
             IpcError::BadRequest(msg) => write!(f, "BadRequest: {msg}"),
             IpcError::Lan(msg) => write!(f, "Lan: {msg}"),
+            IpcError::Review(msg) => write!(f, "Review: {msg}"),
         }
     }
 }
