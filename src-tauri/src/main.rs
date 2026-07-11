@@ -125,10 +125,24 @@ fn main() {
             std::fs::create_dir_all(&attachments_dir).expect("无法创建附件目录");
             tracing::info!("附件目录: {}（模板: {}）", attachments_dir.display(), storage_config.filepath_template);
 
+            // 初始化 LAN 模块（失败不阻断应用启动，其他功能不受影响）
+            let lan_state: Option<std::sync::Arc<lan::LanState>> =
+                tauri::async_runtime::block_on(async {
+                    lan::endpoint::init_lan_state(&data_dir).await
+                })
+                .map(|state| {
+                    tracing::info!("LAN 模块启动成功");
+                    Some(state)
+                })
+                .unwrap_or_else(|e| {
+                    tracing::warn!("LAN 模块启动失败（应用其他功能不受影响）: {}", e);
+                    None
+                });
+
             app.manage(AppState {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
-                lan: None,
+                lan: lan_state,
             });
 
             // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
@@ -182,6 +196,17 @@ fn main() {
             commands::ai_chat::ai_abort,
             commands::ai_chat::list_providers,
             commands::ai_chat::save_providers_cmd,
+            // lan discovery
+            commands::lan::lan_discover_peers,
+            commands::lan::lan_get_local_identity,
+            commands::lan::lan_update_display_name,
+            commands::lan::lan_get_acl_rules,
+            commands::lan::lan_save_acl_rules,
+            commands::lan::lan_get_remote_profile,
+            commands::lan::lan_list_remote_memos,
+            commands::lan::lan_get_remote_memo,
+            commands::lan::lan_get_remote_attachment,
+            commands::lan::lan_copy_memo_to_local,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Tauri 应用时出错");
