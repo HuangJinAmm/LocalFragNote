@@ -128,6 +128,7 @@ fn main() {
             app.manage(AppState {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
+                lan: None,
             });
 
             // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
