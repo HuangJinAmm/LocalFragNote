@@ -18,3 +18,4 @@ tracing = "0.1"
 comrak = { version = "0.24", default-features = false, features = ["shortcodes"] }
 regex = "1"
 unicode_categories = "0.1"
+rs-fsrs = "1.2.1"

@@ -11,6 +11,7 @@ pub mod memo;
 pub mod memo_relation;
 pub mod migration;
 pub mod reaction;
+pub mod review;
 pub mod setting;
 pub mod store;
 pub mod types;
