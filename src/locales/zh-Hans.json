@@ -413,6 +413,22 @@
     "reset-resource-link": "重置资源链接",
     "unused-resources": "未使用资源"
   },
+  "review": {
+    "edit-deck": "编辑牌组",
+    "create-deck": "创建牌组",
+    "deck-name": "牌组名称",
+    "deck-name-placeholder": "输入牌组名称",
+    "deck-tags": "标签",
+    "deck-tags-placeholder": "输入标签后按回车",
+    "cards-per-memo": "每条笔记卡片数",
+    "no-decks": "暂无牌组",
+    "confirm-delete-deck": "确定要删除此牌组吗？",
+    "start-review": "开始复习",
+    "generate-cards": "生成卡片",
+    "generating": "正在生成卡片...",
+    "generated": "已生成 {{count}} 张卡片",
+    "errors": "个错误"
+  },
   "router": {
     "back-to-top": "回到顶部",
     "go-to-home": "回到首页"
