@@ -5,7 +5,7 @@
 use crate::error::{CoreError, CoreResult};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
-use rs_fsrs::{Card as FsrsCard, FSRS, Rating, ReviewLog as FsrsReviewLog, State as FsrsState};
+use rs_fsrs::{Card as FsrsCard, FSRS, Parameters, Rating, State as FsrsState};
 use serde::{Deserialize, Serialize};
 
 // ==================== 实体 ====================
@@ -82,6 +82,16 @@ impl From<&ReviewCard> for FsrsCard {
             },
             ..Default::default()
         }
+    }
+}
+
+/// State 枚举转 u8
+fn state_to_u8(state: FsrsState) -> u8 {
+    match state {
+        FsrsState::New => 0,
+        FsrsState::Learning => 1,
+        FsrsState::Review => 2,
+        FsrsState::Relearning => 3,
     }
 }
 
@@ -297,4 +307,159 @@ pub fn mark_cards_memo_deleted(conn: &Connection, memo_uid: &str) -> CoreResult<
         params![memo_uid],
     )?;
     Ok(())
+}
+
+// ==================== FSRS 调度 ====================
+
+/// 评分：根据 rating 更新卡片调度，返回复习记录
+///
+/// rating: 1=Again 2=Hard 3=Good 4=Easy
+/// fsrs_params: 空切片=默认参数，否则用自定义参数（权重数组，最多 19 个）
+pub fn score_card(
+    conn: &Connection,
+    card_id: i32,
+    rating: u8,
+    fsrs_params: &[f32],
+) -> CoreResult<(ReviewCard, ReviewRecord)> {
+    let mut card = get_card(conn, card_id)?
+        .ok_or_else(|| CoreError::NotFound(format!("card id={card_id}")))?;
+
+    let now = Utc::now();
+    let fsrs = if fsrs_params.is_empty() {
+        FSRS::default()
+    } else {
+        let mut params = Parameters::default();
+        for (i, &w) in fsrs_params.iter().enumerate().take(19) {
+            params.w[i] = w as f64;
+        }
+        FSRS::new(params)
+    };
+
+    let fsrs_card: FsrsCard = (&card).into();
+    let rating_enum = match rating {
+        1 => Rating::Again,
+        2 => Rating::Hard,
+        3 => Rating::Good,
+        4 => Rating::Easy,
+        _ => Rating::Good,
+    };
+    let record_log = fsrs.repeat(fsrs_card, now);
+    let item = &record_log[&rating_enum];
+    let new_card = &item.card;
+    let log = &item.review_log;
+
+    // 更新 card 字段（注意类型转换 f64→f32, i32→u32, State→u8）
+    card.stability = new_card.stability as f32;
+    card.difficulty = new_card.difficulty as f32;
+    card.due = new_card.due.timestamp();
+    card.last_review = Some(now.timestamp());
+    card.reps = new_card.reps as u32;
+    card.lapses = new_card.lapses as u32;
+    card.state = state_to_u8(new_card.state);
+
+    // 写回 DB
+    conn.execute(
+        "UPDATE review_card SET stability = ?1, difficulty = ?2, due = ?3, last_review = ?4,
+         reps = ?5, lapses = ?6, state = ?7 WHERE id = ?8",
+        params![
+            card.stability, card.difficulty, card.due, card.last_review,
+            card.reps, card.lapses, card.state, card.id,
+        ],
+    )?;
+
+    let record = ReviewRecord {
+        id: 0,
+        card_id: card.id,
+        rating,
+        reviewed_ts: now.timestamp(),
+        elapsed_days: log.elapsed_days as f32,
+        scheduled_days: log.scheduled_days as f32,
+        state: state_to_u8(log.state),
+    };
+
+    // 插入复习记录
+    conn.execute(
+        "INSERT INTO review_record (card_id, rating, reviewed_ts, elapsed_days, scheduled_days, state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            record.card_id, record.rating, record.reviewed_ts,
+            record.elapsed_days, record.scheduled_days, record.state,
+        ],
+    )?;
+    let record_id = conn.last_insert_rowid() as i32;
+    let mut record = record;
+    record.id = record_id;
+
+    Ok((card, record))
+}
+
+/// 更新 deck 的 last_reviewed_ts
+pub fn touch_deck_reviewed(conn: &Connection, deck_id: i32) -> CoreResult<()> {
+    let now = Utc::now().timestamp();
+    conn.execute(
+        "UPDATE review_deck SET last_reviewed_ts = ?1 WHERE id = ?2",
+        params![now, deck_id],
+    )?;
+    Ok(())
+}
+
+// ==================== 统计 ====================
+
+/// 计算牌组统计
+pub fn deck_stats(conn: &Connection, deck_id: i32) -> CoreResult<DeckStats> {
+    let now = Utc::now().timestamp();
+    let week_ago = now - 7 * 24 * 3600;
+
+    let total: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM review_card WHERE deck_id = ?1 AND memo_deleted = 0",
+        params![deck_id],
+        |r| r.get(0),
+    )?;
+
+    let due_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM review_card WHERE deck_id = ?1 AND due <= ?2 AND memo_deleted = 0",
+        params![deck_id, now],
+        |r| r.get(0),
+    )?;
+
+    let new_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM review_card WHERE deck_id = ?1 AND state = 0 AND memo_deleted = 0",
+        params![deck_id],
+        |r| r.get(0),
+    )?;
+
+    let learned: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM review_card WHERE deck_id = ?1 AND reps > 0 AND memo_deleted = 0",
+        params![deck_id],
+        |r| r.get(0),
+    )?;
+
+    // 最近 7 天掌握率：(Good+Easy) / 总评分
+    let retention_rate: f32 = conn.query_row(
+        "SELECT
+            CASE WHEN COUNT(*) > 0
+                THEN CAST(SUM(CASE WHEN r.rating IN (3, 4) THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)
+                ELSE 0.0
+            END
+         FROM review_record r
+         JOIN review_card c ON r.card_id = c.id
+         WHERE c.deck_id = ?1 AND r.reviewed_ts >= ?2",
+        params![deck_id, week_ago],
+        |r| r.get::<_, f64>(0).map(|v| v as f32),
+    )?;
+
+    let last_reviewed_ts: Option<i64> = conn.query_row(
+        "SELECT last_reviewed_ts FROM review_deck WHERE id = ?1",
+        params![deck_id],
+        |r| r.get(0),
+    )?;
+
+    Ok(DeckStats {
+        due_count,
+        new_count,
+        total,
+        learned,
+        retention_rate,
+        last_reviewed_ts,
+    })
 }
