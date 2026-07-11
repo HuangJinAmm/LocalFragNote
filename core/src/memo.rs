@@ -413,6 +413,17 @@ pub fn update(conn: &Connection, update: &UpdateMemo) -> CoreResult<Memo> {
 /// 删除（含级联清理 memo_relation、attachment 关联、向量索引）
 pub fn delete(conn: &mut Connection, id: i32) -> CoreResult<()> {
     let tx = conn.transaction()?;
+    // 查询 memo uid，用于标记回顾卡片
+    let uid: Option<String> = tx
+        .query_row("SELECT uid FROM memo WHERE id = ?", params![id], |r| r.get(0))
+        .ok();
+    // 标记关联的回顾卡片为 memo_deleted
+    if let Some(ref uid) = uid {
+        let _ = tx.execute(
+            "UPDATE review_card SET memo_deleted = 1 WHERE memo_uid = ?1",
+            params![uid],
+        );
+    }
     // 级联清理关系
     tx.execute(
         "DELETE FROM memo_relation WHERE memo_id = ?1 OR related_memo_id = ?1",
