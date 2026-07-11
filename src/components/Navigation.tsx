@@ -1,4 +1,4 @@
-import { CompassIcon, LibraryIcon, PaperclipIcon } from "lucide-react";
+import { BookOpenIcon, CompassIcon, LibraryIcon, PaperclipIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -42,8 +42,15 @@ const Navigation = (props: Props) => {
     icon: <CompassIcon className="w-6 h-auto shrink-0" />,
   };
 
-  // 本地单用户应用：主导航包含 home、attachments 和 discover
-  const primaryNavLinks: NavLinkItem[] = [homeNavLink, attachmentsNavLink, discoverNavLink];
+  const reviewNavLink: NavLinkItem = {
+    id: "header-review",
+    path: Routes.REVIEW,
+    title: t("review.nav-title"),
+    icon: <BookOpenIcon className="w-6 h-auto shrink-0" />,
+  };
+
+  // 本地单用户应用：主导航包含 home、attachments、discover 和 review
+  const primaryNavLinks: NavLinkItem[] = [homeNavLink, attachmentsNavLink, discoverNavLink, reviewNavLink];
 
   return (
     <header className={cn("w-full h-full overflow-auto flex flex-col justify-between items-start gap-4", className)}>

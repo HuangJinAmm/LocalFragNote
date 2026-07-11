@@ -26,6 +26,7 @@ function lazyWithReload<T extends React.ComponentType>(factory: () => Promise<{ 
 const About = lazyWithReload(() => import("@/pages/About"));
 const Archived = lazyWithReload(() => import("@/pages/Archived"));
 const Discover = lazyWithReload(() => import("@/pages/Discover"));
+const Review = lazyWithReload(() => import("@/pages/Review"));
 const Home = lazyWithReload(() => import("@/pages/Home"));
 const MemoDetail = lazyWithReload(() => import("@/pages/MemoDetail"));
 const NotFound = lazyWithReload(() => import("@/pages/NotFound"));
@@ -57,6 +58,9 @@ export const routeConfig: RouteObject[] = [
           { path: Routes.ATTACHMENTS, element: <Attachments /> },
           { path: Routes.SETTING, element: <Setting /> },
           { path: Routes.DISCOVER, element: <Discover /> },
+          { path: Routes.REVIEW, element: <Review /> },
+          { path: "review/:deckId", element: <Review /> },
+          { path: "review/:deckId/study", element: <Review /> },
           { path: "404", element: <NotFound /> },
           { path: "*", element: <NotFound /> },
         ],
