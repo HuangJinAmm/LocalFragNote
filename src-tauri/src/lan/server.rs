@@ -26,9 +26,9 @@ use crate::state::AppState;
 /// Handler 结果：成功返回 ResponseData，失败返回 (错误码, 消息)
 type HandlerResult = Result<ResponseData, (u16, String)>;
 
-/// 启动 accept 循环，在后台 tokio task 中被动接收对端连接
+/// 启动 accept 循环，在后台 task 中被动接收对端连接
 pub fn spawn_accept_loop(state: Arc<LanState>, app_handle: tauri::AppHandle) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         loop {
             match state.endpoint.accept().await {
                 Some(incoming) => {

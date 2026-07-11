@@ -97,7 +97,7 @@ fn now_epoch_secs() -> i64 {
 ///
 /// 采用事件驱动模式（非轮询），mDNS 发现/过期时立即更新缓存。
 pub fn spawn_mdns_discovery_loop(state: Arc<LanState>, app_handle: tauri::AppHandle) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         use tauri::Emitter;
         use tokio_stream::StreamExt;
 
