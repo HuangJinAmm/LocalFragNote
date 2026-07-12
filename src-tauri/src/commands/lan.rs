@@ -364,6 +364,7 @@ pub async fn lan_get_remote_attachment(
 /// 10. 复制远端笔记到本地（拉取 memo + 附件，本地创建为私有笔记）
 #[tauri::command]
 pub async fn lan_copy_memo_to_local(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     req: CopyMemoToLocalRequest,
 ) -> IpcResult<CopyMemoToLocalResponse> {
@@ -394,12 +395,9 @@ pub async fn lan_copy_memo_to_local(
         store.with_conn(|c| memos_core::memo::create(c, &create))?
     };
     let new_memo_id = new_memo.id;
-    {
-        let store = state.store();
-        if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(&store, &new_memo) {
-            tracing::warn!("LAN 复制 memo {} 到本地后同步 embedding 失败: {}", new_memo_id, e);
-        }
-    }
+    // 异步同步 embedding（fire-and-forget）：不阻塞当前 async 函数的附件复制流程，
+    // 也不在持 Store 锁的情况下做 ONNX 推理。
+    crate::commands::memo::spawn_sync_memo_embedding(app.clone(), new_memo, "LAN复制");
 
     // 4. 读取存储配置 + clone 附件目录（store guard 在块内释放，不跨 await）
     let cfg: StorageConfig = {

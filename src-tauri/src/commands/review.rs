@@ -708,13 +708,17 @@ fn run_card_agent(
             "tool_calls": assistant_tool_calls,
         }));
 
-        let store = state.store();
+        // 每个工具调用单独获取/释放 Store 锁，避免长时间持锁阻塞其他 DB 操作
         for tc in &tool_calls {
             if state.shutdown.load(Ordering::SeqCst) {
                 return Err("应用正在退出，已取消卡片生成".into());
             }
             let args: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Null);
-            let result = match execute_tool(&tc.name, &args, &store) {
+            let result = {
+                let store = state.store();
+                execute_tool(&tc.name, &args, &store, Some(app))
+            };
+            let result = match result {
                 Ok(v) => v,
                 Err(e) => json!({ "error": e.to_string() }),
             };

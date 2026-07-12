@@ -5,6 +5,7 @@ use memos_core::memo::{CreateMemo, FindMemo};
 use memos_core::types::{RowStatus, Visibility};
 use memos_core::Store;
 use serde_json::{json, Value};
+use tauri::AppHandle;
 
 /// 返回 OpenAI function-calling 格式的工具定义
 pub fn tool_definitions() -> Vec<Value> {
@@ -78,11 +79,19 @@ pub fn tool_definitions() -> Vec<Value> {
 }
 
 /// 执行工具调用，返回结果 JSON
-pub fn execute_tool(name: &str, args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+///
+/// `app` 用于在 create_memo 后异步调度 embedding 同步（fire-and-forget，不阻塞当前调用）。
+/// 传 None 则跳过 embedding 调度（供单元测试使用）。
+pub fn execute_tool(
+    name: &str,
+    args: &Value,
+    store: &Store,
+    app: Option<&AppHandle>,
+) -> memos_core::CoreResult<Value> {
     match name {
         "list_memos" => execute_list_memos(args, store),
         "get_memo" => execute_get_memo(args, store),
-        "create_memo" => execute_create_memo(args, store),
+        "create_memo" => execute_create_memo(args, store, app),
         "list_tags" => execute_list_tags(store),
         "list_memos_by_tag" => execute_list_memos_by_tag(args, store),
         _ => Err(memos_core::CoreError::Other(format!("未知工具: {name}"))),
@@ -162,7 +171,11 @@ fn execute_get_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Value
     }
 }
 
-fn execute_create_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+fn execute_create_memo(
+    args: &Value,
+    store: &Store,
+    app: Option<&AppHandle>,
+) -> memos_core::CoreResult<Value> {
     let content = args
         .get("content")
         .and_then(|v| v.as_str())
@@ -178,8 +191,10 @@ fn execute_create_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Va
         location: None,
     };
     let memo = store.with_conn(|c| memos_core::memo::create(c, &create))?;
-    if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(store, &memo) {
-        tracing::warn!("AI 工具创建 memo {} 后同步 embedding 失败: {}", memo.id, e);
+    // 异步同步 embedding（fire-and-forget）：在独立 spawn_blocking 中执行，
+    // 不在此持 Store 锁做 ONNX 推理，避免阻塞 agent_loop 期间的所有 DB 操作。
+    if let Some(app) = app {
+        crate::commands::memo::spawn_sync_memo_embedding(app.clone(), memo.clone(), "AI创建");
     }
     Ok(json!({
         "uid": memo.uid,
@@ -330,7 +345,7 @@ mod tests {
     #[test]
     fn test_create_memo() {
         let store = Store::open(":memory:").unwrap();
-        let result = execute_create_memo(&json!({"content": "#test 新笔记"}), &store).unwrap();
+        let result = execute_create_memo(&json!({"content": "#test 新笔记"}), &store, None).unwrap();
         assert!(result["uid"].as_str().unwrap().len() > 0);
         assert!(result["id"].as_i64().unwrap() > 0);
     }
@@ -338,7 +353,7 @@ mod tests {
     #[test]
     fn test_create_memo_missing_content() {
         let store = Store::open(":memory:").unwrap();
-        let result = execute_create_memo(&json!({}), &store);
+        let result = execute_create_memo(&json!({}), &store, None);
         assert!(result.is_err());
     }
 
@@ -355,7 +370,7 @@ mod tests {
     #[test]
     fn test_execute_tool_unknown() {
         let store = Store::open(":memory:").unwrap();
-        let result = execute_tool("unknown_tool", &json!({}), &store);
+        let result = execute_tool("unknown_tool", &json!({}), &store, None);
         assert!(result.is_err());
     }
 }

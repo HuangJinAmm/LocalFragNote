@@ -224,8 +224,8 @@ fn agent_loop(
             "tool_calls": assistant_tool_calls,
         }));
 
-        // 执行每个工具调用
-        let store = state.store();
+        // 执行每个工具调用：每个工具调用单独获取/释放 Store 锁，
+        // 避免在一次循环中长时间持锁阻塞其他 DB 操作（如保存笔记、列表查询）。
         for tc in &tool_calls {
             if abort_flag.load(Ordering::SeqCst) || state.shutdown.load(Ordering::SeqCst) {
                 cleanup_abort(run_id);
@@ -238,7 +238,11 @@ fn agent_loop(
             });
 
             let args: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Null);
-            let result = match execute_tool(&tc.name, &args, &store) {
+            let result = {
+                let store = state.store();
+                execute_tool(&tc.name, &args, &store, Some(&app))
+            };
+            let result = match result {
                 Ok(v) => v,
                 Err(e) => json!({ "error": e.to_string() }),
             };
@@ -248,7 +252,6 @@ fn agent_loop(
                 "content": result.to_string(),
             }));
         }
-        drop(store);
     }
 
     // 超过最大轮次
