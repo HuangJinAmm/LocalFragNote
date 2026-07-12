@@ -35,6 +35,9 @@ export interface EditorToolbarProps {
   /** Whether the formatting toolbar is shown in normal mode (persisted preference). */
   isFormattingToolbarVisible: boolean;
   onToggleFormattingToolbar: () => void;
+  /** Whether auto-tag extraction is enabled (persisted preference). */
+  autoTagEnabled: boolean;
+  onToggleAutoTag: () => void;
 }
 
 export interface EditorMetadataProps {

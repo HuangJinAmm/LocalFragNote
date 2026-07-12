@@ -16,3 +16,6 @@ export const EDITOR_HEIGHT = {
 // localStorage key for the user's preference to show the formatting toolbar in
 // normal (non-focus) mode. Defaults to off.
 export const FORMATTING_TOOLBAR_STORAGE_KEY = "memos-editor-formatting-toolbar";
+
+// localStorage key for the auto-tag toggle. Defaults to off.
+export const AUTO_TAG_STORAGE_KEY = "memos-editor-auto-tag";

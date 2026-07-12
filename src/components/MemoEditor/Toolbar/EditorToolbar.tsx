@@ -1,5 +1,6 @@
 import type { FC } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import type { Location, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { validationService } from "../services";
@@ -15,6 +16,8 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
   onAudioRecorderClick,
   isFormattingToolbarVisible,
   onToggleFormattingToolbar,
+  autoTagEnabled,
+  onToggleAutoTag,
 }) => {
   const t = useTranslate();
   const { actions, dispatch } = useEditorContext();
@@ -53,6 +56,10 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
           onToggleFormattingToolbar={onToggleFormattingToolbar}
         />
         <VisibilitySelector value={visibility} onChange={handleVisibilityChange} />
+        <label className="flex items-center gap-1.5 px-2 cursor-pointer select-none text-sm text-muted-foreground">
+          <Switch checked={autoTagEnabled} onCheckedChange={onToggleAutoTag} />
+          <span>{t("editor.auto-tag.toggle")}</span>
+        </label>
       </div>
 
       <div className="flex flex-row justify-end items-center gap-2">

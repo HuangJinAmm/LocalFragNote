@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,8 +14,8 @@ import { cn } from "@/lib/utils";
 import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { convertVisibilityFromString } from "@/utils/memo";
-import { AudioRecorderPanel, EditorContent, EditorMetadata, FocusModeOverlay, TimestampPopover } from "./components";
-import { FOCUS_MODE_STYLES, FORMATTING_TOOLBAR_STORAGE_KEY } from "./constants";
+import { AudioRecorderPanel, EditorContent, EditorMetadata, FocusModeOverlay, TagSuggestionDialog, TimestampPopover } from "./components";
+import { AUTO_TAG_STORAGE_KEY, FOCUS_MODE_STYLES, FORMATTING_TOOLBAR_STORAGE_KEY } from "./constants";
 import { useAudioRecorder, useAutoSave, useFocusMode, useMemoInit } from "./hooks";
 import { errorService, memoService, transcriptionService, validationService } from "./services";
 import { EditorProvider, useEditorContext, useEditorSelector } from "./state";
@@ -58,6 +59,15 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   // Persisted preference: also show the formatting toolbar in normal mode. Focus
   // mode always shows it regardless; this only governs the non-focus layout.
   const [isFormattingToolbarVisible, setFormattingToolbarVisible] = useLocalStorage(FORMATTING_TOOLBAR_STORAGE_KEY, false);
+  // Persisted preference: auto-extract tags on save via AI.
+  const [autoTagEnabled, setAutoTagEnabled] = useLocalStorage(AUTO_TAG_STORAGE_KEY, false);
+  // Tag suggestion dialog state — active only when autoTagEnabled is ON.
+  const [tagDialog, setTagDialog] = useState<{ open: boolean; loading: boolean; suggested: string[]; existing: string[] }>({
+    open: false,
+    loading: false,
+    suggested: [],
+    existing: [],
+  });
 
   const memoName = memo?.name;
   const canTranscribe = useMemo(() => {
@@ -227,6 +237,17 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
     }
   };
 
+  // Extract inline #tags from content for display in the suggestion dialog.
+  const extractExistingTags = (content: string): string[] => {
+    const tags = new Set<string>();
+    const regex = /(?:^|\s)#([\w\u4e00-\u9fa5-]+)/g;
+    let m;
+    while ((m = regex.exec(content)) !== null) {
+      tags.add(m[1]);
+    }
+    return Array.from(tags);
+  };
+
   async function handleSave() {
     // Read the latest state imperatively — this component no longer subscribes
     // to content, so the closure can't rely on a per-render `state` snapshot.
@@ -238,10 +259,36 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
       return;
     }
 
+    // If auto-tag is enabled, intercept save to suggest tags first.
+    if (autoTagEnabled) {
+      const existing = extractExistingTags(state.content);
+      setTagDialog({ open: true, loading: true, suggested: [], existing });
+      try {
+        const suggested = await invoke<string[]>("suggest_tags", { content: state.content });
+        setTagDialog({ open: true, loading: false, suggested, existing });
+      } catch (e) {
+        // If AI suggestion fails, fall back to normal save.
+        setTagDialog({ open: false, loading: false, suggested: [], existing: [] });
+        toast.error(String(e));
+        void doSave(state.content);
+      }
+      return;
+    }
+
+    void doSave(state.content);
+  }
+
+  // Perform the actual save with (optionally modified) content.
+  async function doSave(content: string) {
+    const state = getState();
+    // Shallow-copy state with overridden content so memoService.save sees the
+    // tag-appended text without mutating the live editor store.
+    const stateToSave = { ...state, content };
+
     dispatch(actions.setLoading("saving", true));
 
     try {
-      const result = await memoService.save(state, { memoName, parentMemoName });
+      const result = await memoService.save(stateToSave, { memoName, parentMemoName });
 
       if (!result.hasChanges) {
         toast.error(t("editor.no-changes-detected"));
@@ -302,6 +349,25 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
     }
   }
 
+  // Dialog confirm: append selected tags to content, then save.
+  const handleTagConfirm = (selectedTags: string[]) => {
+    const state = getState();
+    const tagString = selectedTags.map((tag) => `#${tag}`).join(" ");
+    const newContent = tagString ? `${state.content}\n\n${tagString}` : state.content;
+    setTagDialog({ open: false, loading: false, suggested: [], existing: [] });
+    void doSave(newContent);
+  };
+
+  // Dialog skip: save without adding tags.
+  const handleTagSkip = () => {
+    setTagDialog({ open: false, loading: false, suggested: [], existing: [] });
+    void doSave(getState().content);
+  };
+
+  const handleToggleAutoTag = useCallback(() => {
+    setAutoTagEnabled((v) => !v);
+  }, [setAutoTagEnabled]);
+
   return (
     <>
       <FocusModeOverlay isActive={isFocusMode} onToggle={handleToggleFocusMode} />
@@ -358,9 +424,23 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
             onAudioRecorderClick={handleAudioRecorderClick}
             isFormattingToolbarVisible={isFormattingToolbarVisible}
             onToggleFormattingToolbar={handleToggleFormattingToolbar}
+            autoTagEnabled={autoTagEnabled}
+            onToggleAutoTag={handleToggleAutoTag}
           />
         </div>
       </div>
+
+      <TagSuggestionDialog
+        open={tagDialog.open}
+        onOpenChange={(open) => {
+          if (!open) handleTagSkip();
+        }}
+        loading={tagDialog.loading}
+        suggestedTags={tagDialog.suggested}
+        existingTags={tagDialog.existing}
+        onConfirm={handleTagConfirm}
+        onSkip={handleTagSkip}
+      />
     </>
   );
 };

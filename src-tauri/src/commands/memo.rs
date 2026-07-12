@@ -311,6 +311,78 @@ pub async fn embed_text(text: String) -> IpcResult<String> {
         .map_err(|e| IpcError::Internal(format!("embed_text 任务失败: {e}")))?
 }
 
+/// AI 建议标签：根据笔记内容调用 LLM 生成标签建议
+#[tauri::command]
+pub async fn suggest_tags(
+    state: tauri::State<'_, AppState>,
+    content: String,
+) -> IpcResult<Vec<String>> {
+    let store = state.store();
+    let providers = crate::ai::provider::load_providers(&store);
+    let provider = providers
+        .first()
+        .cloned()
+        .ok_or_else(|| IpcError::BadRequest("未配置 AI provider，请先在设置中配置".into()))?;
+
+    // 笔记中已有的标签，用于排除
+    let existing_tags: Vec<String> = markdown::extract_tags(&content);
+
+    let system_prompt = "你是一个标签建议专家。根据用户提供的笔记内容，建议 3-5 个合适的标签。\n\n规则：\n1. 只返回标签名，不含 # 号\n2. 用逗号分隔\n3. 不要返回笔记中已有的标签\n4. 标签应简短（1-4个字/词），能概括笔记主题\n5. 只返回标签列表，不要其他文字";
+
+    let body = serde_json::json!({
+        "model": provider.model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": content },
+        ],
+        "stream": false,
+    });
+
+    let url = format!(
+        "{}/chat/completions",
+        provider.base_url.trim_end_matches('/')
+    );
+    let mut req = ureq::post(&url).set("Content-Type", "application/json");
+    if !provider.api_key.is_empty() {
+        req = req.set("Authorization", &format!("Bearer {}", provider.api_key));
+    }
+
+    let response = req
+        .send_string(&body.to_string())
+        .map_err(|e| IpcError::Internal(format!("AI 请求失败: {e}")))?;
+
+    if response.status() >= 400 {
+        let status = response.status();
+        let body_text = response.into_string().unwrap_or_default();
+        return Err(IpcError::Internal(format!("HTTP {status}: {body_text}")));
+    }
+
+    let resp_json: Value = serde_json::from_str(
+        &response
+            .into_string()
+            .map_err(|e| IpcError::Internal(format!("读取响应失败: {e}")))?,
+    )
+    .map_err(|e| IpcError::Internal(format!("解析响应 JSON 失败: {e}")))?;
+
+    let ai_text = resp_json
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("");
+
+    // 解析 AI 返回的标签（逗号或顿号分隔）
+    let suggested: Vec<String> = ai_text
+        .split([',', '，', '、'])
+        .map(|s| s.trim().replace('#', "").trim().to_string())
+        .filter(|s| !s.is_empty() && !existing_tags.contains(s))
+        .take(10)
+        .collect();
+
+    Ok(suggested)
+}
+
 // ---------- 辅助 ----------
 
 fn build_find(req: ListMemosRequest) -> FindMemo {

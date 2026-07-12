@@ -240,7 +240,18 @@
       "unsupported-description": "此浏览器无法录制备忘录编辑器中的音频。"
     },
     "unsupported-syntax-raw-mode": "此备忘包含富文本编辑器无法安全编辑的语法，已切换到原始 Markdown 模式。",
-    "wysiwyg-editor": "所见即所得编辑器"
+    "wysiwyg-editor": "所见即所得编辑器",
+    "auto-tag": {
+      "toggle": "自动标签",
+      "suggesting": "正在建议标签...",
+      "dialog-title": "建议标签",
+      "dialog-description": "选择要添加到笔记的标签。",
+      "existing-tags": "已有标签",
+      "suggested-tags": "建议标签",
+      "no-suggestions": "没有标签建议。直接保存？",
+      "add-and-save": "添加并保存",
+      "save-without-tags": "不添加标签保存"
+    }
   },
   "inbox": {
     "failed-to-load": "加载失败",

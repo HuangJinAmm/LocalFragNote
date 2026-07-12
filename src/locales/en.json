@@ -290,6 +290,17 @@
       "trigger": "Record audio",
       "unsupported": "Audio recording unsupported",
       "unsupported-description": "This browser cannot record audio from the memo composer."
+    },
+    "auto-tag": {
+      "toggle": "Auto tags",
+      "suggesting": "Suggesting tags...",
+      "dialog-title": "Suggested Tags",
+      "dialog-description": "Select tags to add to your memo.",
+      "existing-tags": "Existing tags",
+      "suggested-tags": "Suggested tags",
+      "no-suggestions": "No tag suggestions. Save without tags?",
+      "add-and-save": "Add & Save",
+      "save-without-tags": "Save without tags"
     }
   },
   "inbox": {

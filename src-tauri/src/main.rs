@@ -174,6 +174,7 @@ fn main() {
             commands::memo::list_tags,
             commands::memo::list_memo_timestamps,
             commands::memo::embed_text,
+            commands::memo::suggest_tags,
             // attachment
             commands::attachment::create_attachment,
             commands::attachment::get_attachment,

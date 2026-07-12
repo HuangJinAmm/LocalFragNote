@@ -5,3 +5,4 @@ export * from "./EditorContent";
 export * from "./EditorMetadata";
 export { FocusModeExitButton, FocusModeOverlay } from "./FocusModeOverlay";
 export { TimestampPopover } from "./TimestampPopover";
+export { default as TagSuggestionDialog } from "./TagSuggestionDialog";
