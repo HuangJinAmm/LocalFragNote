@@ -42,6 +42,18 @@ export function hasExtendedData(node: unknown): node is { data: ExtendedData } {
   return typeof node === "object" && node !== null && "data" in node && typeof (node as { data: unknown }).data === "object";
 }
 
+function hasClassToken(className: unknown, token: string): boolean {
+  if (Array.isArray(className)) {
+    return className.some((item) => typeof item === "string" && item === token);
+  }
+
+  if (typeof className === "string") {
+    return className.split(/\s+/).includes(token);
+  }
+
+  return false;
+}
+
 export function isTagElement(node: HastElement): boolean {
   if (hasExtendedData(node) && node.data.mdastType === "tagNode") {
     return true;
@@ -52,11 +64,8 @@ export function isTagElement(node: HastElement): boolean {
     return true;
   }
 
-  const className = node.properties?.className;
-  if (Array.isArray(className) && className.includes("tag")) {
-    return true;
-  }
-  if (typeof className === "string" && className.split(/\s+/).includes("tag")) {
+  const className: unknown = node.properties?.className;
+  if (hasClassToken(className, "tag")) {
     return true;
   }
 
@@ -73,11 +82,8 @@ export function isMentionElement(node: HastElement): boolean {
     return true;
   }
 
-  const className = node.properties?.className;
-  if (Array.isArray(className) && className.includes("mention")) {
-    return true;
-  }
-  if (typeof className === "string" && className.split(/\s+/).includes("mention")) {
+  const className: unknown = node.properties?.className;
+  if (hasClassToken(className, "mention")) {
     return true;
   }
 
