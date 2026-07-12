@@ -646,3 +646,23 @@ fn tag_table_no_sync_when_content_unchanged() {
     assert_eq!(rust_count, 1, "content 未变时 tag count 不应改变");
 }
 
+#[test]
+fn tag_table_decrements_on_delete() {
+    let store = open_test_store();
+    {
+        let conn = store.lock_conn();
+        let created = memo::create(&conn, &CreateMemo {
+            uid: "test_tag_delete".to_string(),
+            content: "hello #rust #ai".to_string(),
+            visibility: Visibility::Private,
+            pinned: false,
+            payload: json!({}),
+            location: None,
+        }).unwrap();
+        drop(conn);
+        store.with_conn_mut(|c| memo::delete(c, created.id)).unwrap();
+    }
+    let tags = store.with_conn(|c| tag::list_tags(c)).unwrap();
+    assert!(tags.is_empty(), "删除 memo 后 tag 表应被清空");
+}
+

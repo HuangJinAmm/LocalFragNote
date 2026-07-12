@@ -473,6 +473,10 @@ pub fn delete(conn: &mut Connection, id: i32) -> CoreResult<()> {
     let uid: Option<String> = tx
         .query_row("SELECT uid FROM memo WHERE id = ?", params![id], |r| r.get(0))
         .ok();
+    // 查询 content，用于递减 tag 计数
+    let content: Option<String> = tx
+        .query_row("SELECT content FROM memo WHERE id = ?", params![id], |r| r.get(0))
+        .ok();
     // 标记关联的回顾卡片为 memo_deleted
     if let Some(ref uid) = uid {
         let _ = tx.execute(
@@ -490,6 +494,10 @@ pub fn delete(conn: &mut Connection, id: i32) -> CoreResult<()> {
     // 删除向量索引（FTS 由 memo_ad 触发器自动清理）
     let _ = tx.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id]);
     let affected = tx.execute("DELETE FROM memo WHERE id = ?", params![id])?;
+    // 递减 tag 计数
+    if let Some(ref content) = content {
+        tag::decrement_tags_for_content(&tx, content)?;
+    }
     tx.commit()?;
     if affected == 0 {
         return Err(CoreError::NotFound(format!("memo id={id}")));
