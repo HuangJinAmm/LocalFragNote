@@ -2,6 +2,7 @@
 
 use crate::lan::LanState;
 use memos_core::Store;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub struct AppState {
@@ -10,6 +11,8 @@ pub struct AppState {
     pub attachments_dir: std::path::PathBuf,
     /// LAN 模块运行时状态（启动失败则为 None，应用其他功能不受影响）
     pub lan: Option<Arc<LanState>>,
+    /// 全局 shutdown 标志：app 退出时设为 true，后台任务据此提前终止
+    pub shutdown: AtomicBool,
 }
 
 impl AppState {

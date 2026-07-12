@@ -66,6 +66,11 @@ fn backfill_embeddings(app: &tauri::AppHandle) {
     tracing::info!("开始为 {} 条历史 memo 生成 embedding", ids.len());
 
     for id in ids {
+        // app 退出时提前终止，避免阻塞进程退出
+        if state.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::info!("backfill_embeddings interrupted by shutdown signal");
+            return;
+        }
         let content: String = match state.store().with_conn(|c| {
             let content: String = c.query_row("SELECT content FROM memo WHERE id = ?", [id], |r| r.get(0))?;
             Ok(content)
@@ -143,6 +148,7 @@ fn main() {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
                 lan: lan_state.clone(),
+                shutdown: std::sync::atomic::AtomicBool::new(false),
             });
 
             // 启动 LAN 服务端 accept 循环
@@ -236,12 +242,22 @@ fn main() {
             if let tauri::RunEvent::Exit = event {
                 // 清理 LAN 模块：发送 shutdown 信号通知后台 task 退出。
                 // 不在此 spawn 异步清理 task，否则 runtime 会等待其完成导致进程挂起。
-                // Endpoint 会在进程退出时随 LanState drop 自动关闭。
                 let state = app_handle.state::<AppState>();
                 if let Ok(lan_state) = state.lan() {
                     let _ = lan_state.shutdown_tx.send(true);
                     tracing::info!("LAN shutdown signal sent");
                 }
+                // 标记 backfill_embeddings 任务停止
+                state.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+
+                // 强制退出进程。
+                // Tauri 的 graceful shutdown 会等待 Tokio runtime 中所有 spawn_blocking
+                // 任务完成（如 backfill_embeddings），以及 iroh Endpoint 的内部 task。
+                // 这些任务可能长时间运行（模型下载、QUIC 连接清理等），导致进程无法退出，
+                // Windows 上 exe 文件保持锁定，下次编译时 cargo 无法覆盖写入。
+                // std::process::exit 立即终止进程，OS 释放所有文件句柄。
+                tracing::info!("Force exiting process");
+                std::process::exit(0);
             }
         });
 }
