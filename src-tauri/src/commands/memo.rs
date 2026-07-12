@@ -4,6 +4,7 @@ use crate::error::{IpcError, IpcResult};
 use crate::state::AppState;
 use memos_core::markdown;
 use memos_core::memo::{CreateMemo, FindMemo, Memo, MemoLocation, UpdateMemo};
+use memos_core::Store;
 use memos_core::types::{RowStatus, Visibility};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,61 @@ pub struct MemoMetadata {
     pub snippet: String,
 }
 
+// ---------- embedding helper ----------
+
+fn should_store_embedding(row_status: RowStatus) -> bool {
+    matches!(row_status, RowStatus::Normal)
+}
+
+pub(crate) fn delete_memo_embedding(store: &Store, id: i32) -> IpcResult<()> {
+    store.with_conn(|c| {
+        c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+pub(crate) fn upsert_memo_embedding(store: &Store, id: i32, content: &str) -> IpcResult<()> {
+    let embedding_json = crate::embedding::embed_to_json(content)?;
+    store.with_conn(|c| {
+        // vec0 不支持 UPDATE，先删后插以幂等
+        c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
+        c.execute(
+            "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
+            params![id, &embedding_json],
+        )?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+pub(crate) fn sync_memo_embedding_for_memo(store: &Store, memo: &Memo) -> IpcResult<()> {
+    if should_store_embedding(memo.row_status) {
+        upsert_memo_embedding(store, memo.id, &memo.content)
+    } else {
+        delete_memo_embedding(store, memo.id)
+    }
+}
+
+fn spawn_sync_memo_embedding(app: tauri::AppHandle, memo: Memo, action_label: &'static str) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        if state.shutdown.load(Ordering::SeqCst) {
+            tracing::info!("跳过 memo {} 的 embedding 同步：应用正在退出", memo.id);
+            return;
+        }
+
+        let result = {
+            let store = state.store();
+            sync_memo_embedding_for_memo(&store, &memo)
+        };
+
+        if let Err(e) = result {
+            tracing::warn!("memo {} 在{}后同步 embedding 失败: {}", memo.id, action_label, e);
+        }
+    });
+}
+
 // ---------- 命令 ----------
 
 #[tauri::command]
@@ -116,37 +172,7 @@ pub fn create_memo(
             })
         })?
     };
-
-    // 异步生成 embedding 并插入 vec0 表（不阻塞 memo 创建返回）
-    let content = memo.content.clone();
-    let id = memo.id;
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        if state.shutdown.load(Ordering::SeqCst) {
-            tracing::info!("跳过 memo {} 的 embedding：应用正在退出", id);
-            return;
-        }
-        match crate::embedding::embed_to_json(&content) {
-            Ok(embedding_json) => {
-                if state.shutdown.load(Ordering::SeqCst) {
-                    tracing::info!("取消写入 memo {} 的 embedding：应用正在退出", id);
-                    return;
-                }
-                // vec0 不支持 UPDATE，先删后插以幂等
-                if let Err(e) = state.store().with_conn(|c| {
-                    c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
-                    c.execute(
-                        "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
-                        params![id, &embedding_json],
-                    )?;
-                    Ok(())
-                }) {
-                    tracing::warn!("为 memo {} 插入 embedding 失败: {}", id, e);
-                }
-            }
-            Err(e) => tracing::warn!("为 memo {} 生成 embedding 失败: {}", id, e),
-        }
-    });
+    spawn_sync_memo_embedding(app, memo.clone(), "创建");
 
     Ok(memo)
 }
@@ -182,7 +208,7 @@ pub fn update_memo(
     state: tauri::State<'_, AppState>,
     req: UpdateMemoRequest,
 ) -> IpcResult<Memo> {
-    let content_updated = req.content.is_some();
+    let should_sync_embedding = req.content.is_some() || req.row_status.is_some();
     let updated = {
         let store = state.store();
         store.with_conn(|c| {
@@ -199,36 +225,8 @@ pub fn update_memo(
         })?
     };
 
-    // 当 content 更新时，异步重建 embedding（vec0 不支持 UPDATE，先删后插）
-    if content_updated {
-        let content = updated.content.clone();
-        let id = updated.id;
-        tauri::async_runtime::spawn_blocking(move || {
-            let state = app.state::<AppState>();
-            if state.shutdown.load(Ordering::SeqCst) {
-                tracing::info!("跳过 memo {} 的 embedding 重建：应用正在退出", id);
-                return;
-            }
-            match crate::embedding::embed_to_json(&content) {
-                Ok(embedding_json) => {
-                    if state.shutdown.load(Ordering::SeqCst) {
-                        tracing::info!("取消写入 memo {} 的 embedding 重建结果：应用正在退出", id);
-                        return;
-                    }
-                    if let Err(e) = state.store().with_conn(|c| {
-                        c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
-                        c.execute(
-                            "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
-                            params![id, &embedding_json],
-                        )?;
-                        Ok(())
-                    }) {
-                        tracing::warn!("为 memo {} 重建 embedding 失败: {}", id, e);
-                    }
-                }
-                Err(e) => tracing::warn!("为 memo {} 生成 embedding 失败: {}", id, e),
-            }
-        });
+    if should_sync_embedding {
+        spawn_sync_memo_embedding(app, updated.clone(), "更新");
     }
 
     Ok(updated)

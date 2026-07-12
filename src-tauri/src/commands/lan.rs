@@ -381,7 +381,7 @@ pub async fn lan_copy_memo_to_local(
     let new_uid = gen_uid();
 
     // 3. 本地创建 memo（visibility=Private, pinned=false）
-    let new_memo_id: i32 = {
+    let new_memo = {
         let store = state.store();
         let create = CreateMemo {
             uid: new_uid.clone(),
@@ -391,9 +391,15 @@ pub async fn lan_copy_memo_to_local(
             payload: serde_json::json!({}),
             location: None,
         };
-        let memo = store.with_conn(|c| memos_core::memo::create(c, &create))?;
-        memo.id
+        store.with_conn(|c| memos_core::memo::create(c, &create))?
     };
+    let new_memo_id = new_memo.id;
+    {
+        let store = state.store();
+        if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(&store, &new_memo) {
+            tracing::warn!("LAN 复制 memo {} 到本地后同步 embedding 失败: {}", new_memo_id, e);
+        }
+    }
 
     // 4. 读取存储配置 + clone 附件目录（store guard 在块内释放，不跨 await）
     let cfg: StorageConfig = {

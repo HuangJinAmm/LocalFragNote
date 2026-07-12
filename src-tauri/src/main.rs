@@ -1,5 +1,4 @@
-// 防止 release 模式下出现控制台窗口（Windows）
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// 调试退出流程时保留 Windows 控制台，便于直接观察后台卡住的位置。
 
 mod commands;
 mod ai;
@@ -22,16 +21,81 @@ fn setup_ort_dylib_path() {
 }
 
 use state::AppState;
+use std::sync::atomic::Ordering;
 use tauri::Manager;
+
+/// 退出时给清理逻辑一个有限窗口，避免卡死在后台任务收尾。
+const EXIT_CLEANUP_TIMEOUT_SECS: u64 = 2;
+/// 超过该时间仍未正常退出，则直接结束进程，避免残留后台进程。
+const EXIT_FORCE_TIMEOUT_SECS: u64 = 5;
+
+fn current_pid() -> u32 {
+    std::process::id()
+}
+
+fn init_tracing() {
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
+}
+
+fn stop_lan_with_timeout(app_handle: &tauri::AppHandle) {
+    tracing::info!(
+        pid = current_pid(),
+        timeout_secs = EXIT_CLEANUP_TIMEOUT_SECS,
+        "退出清理：开始停止 LAN 模块"
+    );
+
+    match tauri::async_runtime::block_on(async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(EXIT_CLEANUP_TIMEOUT_SECS),
+            lan::endpoint::stop_lan_module(app_handle),
+        )
+        .await
+    }) {
+        Ok(Ok(())) => tracing::info!(pid = current_pid(), "退出清理：LAN 模块已停止"),
+        Ok(Err(e)) => tracing::warn!(pid = current_pid(), "退出清理：LAN 模块停止失败，继续退出: {}", e),
+        Err(_) => tracing::warn!(pid = current_pid(), "退出清理：LAN 模块停止超时，继续退出"),
+    }
+}
 
 fn cleanup_app_resources(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<AppState>();
-    state
+    let shutdown_was_set = state
         .shutdown
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+        .swap(true, Ordering::SeqCst);
+    tracing::info!(pid = current_pid(), shutdown_was_set, "退出清理：开始");
+
     commands::ai_chat::abort_all();
-    let _ = tauri::async_runtime::block_on(async {
-        lan::endpoint::stop_lan_module(app_handle).await
+    stop_lan_with_timeout(app_handle);
+    tracing::info!(pid = current_pid(), "退出清理：完成");
+}
+
+fn spawn_exit_watchdog() {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(EXIT_FORCE_TIMEOUT_SECS));
+        tracing::warn!(
+            pid = current_pid(),
+            timeout_secs = EXIT_FORCE_TIMEOUT_SECS,
+            "退出看门狗：正常退出超时，执行强制退出"
+        );
+        std::process::exit(0);
+    });
+}
+
+fn spawn_cleanup_and_exit(app_handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        cleanup_app_resources(&app_handle);
+        tracing::info!(pid = current_pid(), "退出清理：请求应用退出");
+        app_handle.exit(0);
     });
 }
 
@@ -48,79 +112,11 @@ fn ping(state: tauri::State<'_, AppState>) -> String {
     }
 }
 
-/// 后台批量生成缺失 embedding 的历史 memo
-/// 在应用启动后异步执行，不阻塞 UI；首次会触发模型下载
-fn backfill_embeddings(app: &tauri::AppHandle) {
-    use rusqlite::params;
-    let state = app.state::<AppState>();
-
-    // 查询没有 embedding 的 NORMAL 状态 memo
-    let ids: Vec<i32> = match state.store().with_conn(|c| {
-        let mut stmt = c.prepare(
-            "SELECT m.id FROM memo m
-             LEFT JOIN memo_vec v ON m.id = v.rowid
-             WHERE v.rowid IS NULL AND m.row_status = 'NORMAL'",
-        )?;
-        let rows = stmt.query_map([], |r| r.get(0))?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
-    }) {
-        Ok(ids) => ids,
-        Err(e) => {
-            tracing::warn!("查询缺失 embedding 的 memo 失败: {}", e);
-            return;
-        }
-    };
-
-    if ids.is_empty() {
-        return;
-    }
-    tracing::info!("开始为 {} 条历史 memo 生成 embedding", ids.len());
-
-    for id in ids {
-        // app 退出时提前终止，避免阻塞进程退出
-        if state.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
-            tracing::info!("backfill_embeddings interrupted by shutdown signal");
-            return;
-        }
-        let content: String = match state.store().with_conn(|c| {
-            let content: String = c.query_row("SELECT content FROM memo WHERE id = ?", [id], |r| r.get(0))?;
-            Ok(content)
-        }) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("查询 memo {} 内容失败: {}", id, e);
-                continue;
-            }
-        };
-        match crate::embedding::embed_to_json(&content) {
-            Ok(embedding_json) => {
-                if state.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
-                    tracing::info!("跳过写入 memo {} 的 embedding：应用正在退出", id);
-                    return;
-                }
-                if let Err(e) = state.store().with_conn(|c| {
-                    c.execute(
-                        "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
-                        params![id, &embedding_json],
-                    )?;
-                    Ok(())
-                }) {
-                    tracing::warn!("为 memo {} 插入 embedding 失败: {}", id, e);
-                }
-            }
-            Err(e) => tracing::warn!("为 memo {} 生成 embedding 失败: {}", id, e),
-        }
-    }
-    tracing::info!("历史 embedding 生成完成");
-}
-
 fn main() {
     setup_ort_dylib_path();
+    init_tracing();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
-        .init();
+    tracing::info!(pid = current_pid(), "应用启动，控制台日志已启用");
 
     tauri::Builder::default()
         .register_uri_scheme_protocol("attachment", |ctx, request| {
@@ -128,6 +124,7 @@ fn main() {
             protocol::handle_attachment_request(state.inner(), &request)
         })
         .setup(|app| {
+            tracing::info!(pid = current_pid(), "setup: begin");
             let data_dir = app.path().app_data_dir().expect("无法获取数据目录");
             std::fs::create_dir_all(&data_dir).expect("无法创建数据目录");
             let db_path = data_dir.join("memos.db");
@@ -161,6 +158,7 @@ fn main() {
             };
             if lan_enabled {
                 let app_handle = app.handle().clone();
+                tracing::info!("setup: 检测到 LAN 已启用，开始启动 LAN 模块");
                 let result = tauri::async_runtime::block_on(async {
                     lan::endpoint::start_lan_module(&app_handle).await
                 });
@@ -170,13 +168,7 @@ fn main() {
                 }
             }
 
-            // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
-            // 首次启动会触发模型下载，后续仅为缺失 embedding 的 memo 生成
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                backfill_embeddings(&app_handle);
-            });
-
+            tracing::info!(pid = current_pid(), "setup: end");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -254,23 +246,15 @@ fn main() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let state = app_handle.state::<AppState>();
-                if state.begin_shutdown() {
-                    api.prevent_exit();
-                    tracing::info!("收到退出请求，开始清理应用资源");
-
-                    let app_handle = app_handle.clone();
-                    std::thread::spawn(move || {
-                        cleanup_app_resources(&app_handle);
-                        tracing::info!("应用资源清理完成，开始请求正常退出");
-                        app_handle.exit(0);
-
-                        // 少数阻塞任务无法被 Tokio 立即取消，超时后兜底退出，
-                        // 避免 Windows 上可执行文件和端口长期被占用。
-                        std::thread::sleep(std::time::Duration::from_secs(3));
-                        tracing::warn!("正常退出超时，执行兜底强制退出");
-                        std::process::exit(0);
-                    });
+                if !state.begin_shutdown() {
+                    tracing::debug!(pid = current_pid(), "退出流程已启动，忽略重复 ExitRequested");
+                    return;
                 }
+
+                api.prevent_exit();
+                tracing::info!(pid = current_pid(), "收到退出请求，开始执行退出清理");
+                spawn_exit_watchdog();
+                spawn_cleanup_and_exit(app_handle.clone());
             }
         });
 }

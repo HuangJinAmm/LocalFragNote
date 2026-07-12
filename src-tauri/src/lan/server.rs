@@ -36,11 +36,15 @@ pub fn spawn_accept_loop(state: Arc<LanState>, app_handle: tauri::AppHandle) {
             tokio::select! {
                 biased;
                 _ = shutdown_rx.changed() => {
-                    tracing::info!("LAN accept loop shutting down");
+                    tracing::info!("LAN accept loop: 收到 shutdown 信号");
                     break;
                 }
                 incoming = state.endpoint.accept() => {
-                    let Some(incoming) = incoming else { break };
+                    let Some(incoming) = incoming else {
+                        tracing::info!("LAN accept loop: endpoint.accept() 返回 None，循环结束");
+                        break;
+                    };
+                    tracing::info!("LAN accept loop: 收到新的 incoming 连接");
                     let state = state.clone();
                     let app = app_handle.clone();
                     tokio::spawn(async move {
@@ -62,10 +66,12 @@ async fn handle_incoming(
     app: tauri::AppHandle,
     incoming: iroh::endpoint::Incoming,
 ) -> Result<(), LanError> {
+    tracing::info!("LAN connection handler: 等待 incoming 完成握手");
     let conn = incoming
         .await
         .map_err(|e| LanError::Endpoint(e.to_string()))?;
     let peer_id = conn.remote_id().to_string();
+    tracing::info!(%peer_id, "LAN connection handler: 握手成功");
     loop {
         match conn.accept_bi().await {
             Ok((mut send, mut recv)) => {
@@ -90,11 +96,12 @@ async fn handle_incoming(
                 });
             }
             Err(e) => {
-                tracing::debug!("LAN accept_bi closed for peer {}: {}", peer_id, e);
+                tracing::info!("LAN connection handler: peer {} 的 accept_bi 已结束: {}", peer_id, e);
                 break;
             }
         }
     }
+    tracing::info!(%peer_id, "LAN connection handler: 结束");
     Ok(())
 }
 

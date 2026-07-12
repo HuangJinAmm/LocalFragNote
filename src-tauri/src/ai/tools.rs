@@ -178,6 +178,9 @@ fn execute_create_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Va
         location: None,
     };
     let memo = store.with_conn(|c| memos_core::memo::create(c, &create))?;
+    if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(store, &memo) {
+        tracing::warn!("AI 工具创建 memo {} 后同步 embedding 失败: {}", memo.id, e);
+    }
     Ok(json!({
         "uid": memo.uid,
         "id": memo.id,

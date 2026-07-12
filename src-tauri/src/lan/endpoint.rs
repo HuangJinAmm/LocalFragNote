@@ -122,19 +122,20 @@ pub async fn stop_lan_module(app_handle: &tauri::AppHandle) -> Result<(), LanErr
 
     let app_state = app_handle.state::<AppState>();
     let Some(lan_state) = app_state.take_lan() else {
+        tracing::info!("LAN 停止：当前没有运行中的 LAN 状态");
         let _ = app_handle.emit("lan:status-changed", ());
         let _ = app_handle.emit("lan:peers-changed", ());
         return Ok(());
     };
 
     let _ = lan_state.shutdown_tx.send(true);
-    tracing::info!("已发送 LAN shutdown 信号");
+    tracing::info!("LAN 停止：已发送 shutdown 信号，准备关闭 endpoint");
     lan_state.endpoint.close().await;
-    tracing::info!("LAN endpoint 已关闭");
+    tracing::info!("LAN 停止：endpoint 已关闭");
 
     let _ = app_handle.emit("lan:status-changed", ());
     let _ = app_handle.emit("lan:peers-changed", ());
-    tracing::info!("LAN 模块已停止");
+    tracing::info!("LAN 停止：已完成");
     Ok(())
 }
 
@@ -160,6 +161,7 @@ pub fn spawn_mdns_discovery_loop(state: Arc<LanState>, app_handle: tauri::AppHan
         use tauri::Emitter;
         use tokio_stream::StreamExt;
 
+        tracing::info!("LAN mDNS discovery loop: subscribe begin");
         let mut events = state.mdns.subscribe().await;
         let mut shutdown_rx = state.shutdown_tx.subscribe();
         tracing::info!("LAN mDNS discovery loop started");
@@ -168,11 +170,14 @@ pub fn spawn_mdns_discovery_loop(state: Arc<LanState>, app_handle: tauri::AppHan
             tokio::select! {
                 biased;
                 _ = shutdown_rx.changed() => {
-                    tracing::info!("LAN mDNS discovery loop shutting down");
+                    tracing::info!("LAN mDNS discovery loop: 收到 shutdown 信号");
                     break;
                 }
                 event = events.next() => {
-                    let Some(event) = event else { break };
+                    let Some(event) = event else {
+                        tracing::info!("LAN mDNS discovery loop: 事件流已结束");
+                        break;
+                    };
                     let changed = match event {
                         DiscoveryEvent::Discovered { endpoint_info, .. } => {
                             let peer_id = endpoint_info.endpoint_id.to_string();
