@@ -186,23 +186,8 @@ fn execute_create_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Va
 }
 
 fn execute_list_tags(store: &Store) -> memos_core::CoreResult<Value> {
-    let contents = store.with_conn(|c| -> memos_core::CoreResult<Vec<String>> {
-        let mut stmt = c.prepare("SELECT content FROM memo WHERE row_status = 'NORMAL'")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
-        Ok(out)
-    })?;
-
-    let mut counts: std::collections::BTreeMap<String, i32> = std::collections::BTreeMap::new();
-    for content in contents {
-        for tag in markdown::extract_tags(&content) {
-            *counts.entry(tag).or_insert(0) += 1;
-        }
-    }
-    let tags: Vec<Value> = counts
+    let tags = store.with_conn(|c| memos_core::tag::list_tags(c))?;
+    let tags: Vec<Value> = tags
         .into_iter()
         .map(|(tag, count)| json!({ "tag": tag, "count": count }))
         .collect();
