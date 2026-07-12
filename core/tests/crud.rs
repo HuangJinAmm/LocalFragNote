@@ -553,3 +553,96 @@ fn tag_table_empty_when_no_tags() {
     assert!(tags.is_empty(), "无 tag 的 memo 不应产生 tag 表记录");
 }
 
+#[test]
+fn tag_table_syncs_on_update_content() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    let created = memo::create(&conn, &CreateMemo {
+        uid: "test_tag_update".to_string(),
+        content: "hello #rust".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: None,
+        content: Some("hello #rust #go".to_string()),
+        visibility: None,
+        pinned: None,
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    let rust_count = tags.iter().find(|(n, _)| n == "rust").map(|(_, c)| *c).unwrap_or(0);
+    let go_count = tags.iter().find(|(n, _)| n == "go").map(|(_, c)| *c).unwrap_or(0);
+    assert_eq!(rust_count, 1, "rust count 应保持 1");
+    assert_eq!(go_count, 1, "go count 应为 1");
+}
+
+#[test]
+fn tag_table_removes_tag_when_removed_from_content() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    let created = memo::create(&conn, &CreateMemo {
+        uid: "test_tag_remove".to_string(),
+        content: "hello #rust #ai".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: None,
+        content: Some("hello #rust".to_string()),
+        visibility: None,
+        pinned: None,
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    let names: Vec<&str> = tags.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(names.contains(&"rust"), "rust 应仍在 tag 表");
+    assert!(!names.contains(&"ai"), "ai count 归 0 应被删除");
+}
+
+#[test]
+fn tag_table_no_sync_when_content_unchanged() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    let created = memo::create(&conn, &CreateMemo {
+        uid: "test_tag_nosync".to_string(),
+        content: "hello #rust".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: None,
+        content: None,
+        visibility: None,
+        pinned: Some(true),
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    let rust_count = tags.iter().find(|(n, _)| n == "rust").map(|(_, c)| *c).unwrap_or(0);
+    assert_eq!(rust_count, 1, "content 未变时 tag count 不应改变");
+}
+

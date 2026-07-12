@@ -403,11 +403,65 @@ pub fn update(conn: &Connection, update: &UpdateMemo) -> CoreResult<Memo> {
     args.push(Box::new(chrono::Utc::now().timestamp()));
 
     args.push(Box::new(update.id));
+
+    // 若 content 变化，先读取旧 content 用于 tag 同步
+    let old_content: Option<String> = if update.content.is_some() {
+        conn.query_row(
+            "SELECT content FROM memo WHERE id = ?",
+            params![update.id],
+            |r| r.get(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    // 若 row_status 变化，先读取旧 row_status 和 content 用于 tag 同步
+    let old_row_status: Option<RowStatus> = if update.row_status.is_some() {
+        conn.query_row(
+            "SELECT row_status FROM memo WHERE id = ?",
+            params![update.id],
+            |r| r.get(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+    let content_for_row_status: Option<String> = if old_row_status.is_some() && update.content.is_none() {
+        conn.query_row(
+            "SELECT content FROM memo WHERE id = ?",
+            params![update.id],
+            |r| r.get(0),
+        )
+        .ok()
+    } else {
+        None
+    };
+
     let sql = format!("UPDATE memo SET {} WHERE id = ?", sets.join(", "));
     let affected = conn.execute(&sql, args.iter().map(|b| b.as_ref()).collect::<Vec<_>>().as_slice())?;
     if affected == 0 {
         return Err(CoreError::NotFound(format!("memo id={}", update.id)));
     }
+
+    // 同步 tag 表
+    if let Some(ref old_content) = old_content {
+        let new_content = update.content.as_deref().unwrap_or(old_content);
+        tag::sync_tags_on_update(conn, old_content, new_content)?;
+    }
+
+    // row_status 变化时同步 tag count
+    if let (Some(old_rs), Some(new_rs)) = (old_row_status, update.row_status) {
+        let content_ref = update.content.as_deref().or(content_for_row_status.as_deref()).unwrap_or("");
+        let was_normal = old_rs == RowStatus::Normal;
+        let is_normal = new_rs == RowStatus::Normal;
+        if !was_normal && is_normal {
+            tag::upsert_tags_for_content(conn, content_ref)?;
+        } else if was_normal && !is_normal {
+            tag::decrement_tags_for_content(conn, content_ref)?;
+        }
+    }
+
     get(conn, &FindMemo { id: Some(update.id), ..Default::default() })?
         .ok_or_else(|| CoreError::NotFound(format!("memo id={}", update.id)))
 }
