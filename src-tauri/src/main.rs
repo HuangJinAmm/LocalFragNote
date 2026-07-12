@@ -24,6 +24,17 @@ fn setup_ort_dylib_path() {
 use state::AppState;
 use tauri::Manager;
 
+fn cleanup_app_resources(app_handle: &tauri::AppHandle) {
+    let state = app_handle.state::<AppState>();
+    state
+        .shutdown
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    commands::ai_chat::abort_all();
+    let _ = tauri::async_runtime::block_on(async {
+        lan::endpoint::stop_lan_module(app_handle).await
+    });
+}
+
 /// 健康检查命令 — 验证 Store 已初始化
 #[tauri::command]
 fn ping(state: tauri::State<'_, AppState>) -> String {
@@ -83,6 +94,10 @@ fn backfill_embeddings(app: &tauri::AppHandle) {
         };
         match crate::embedding::embed_to_json(&content) {
             Ok(embedding_json) => {
+                if state.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
+                    tracing::info!("跳过写入 memo {} 的 embedding：应用正在退出", id);
+                    return;
+                }
                 if let Err(e) = state.store().with_conn(|c| {
                     c.execute(
                         "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
@@ -130,33 +145,29 @@ fn main() {
             std::fs::create_dir_all(&attachments_dir).expect("无法创建附件目录");
             tracing::info!("附件目录: {}（模板: {}）", attachments_dir.display(), storage_config.filepath_template);
 
-            // 初始化 LAN 模块（失败不阻断应用启动，其他功能不受影响）
-            let lan_state: Option<std::sync::Arc<lan::LanState>> =
-                tauri::async_runtime::block_on(async {
-                    lan::endpoint::init_lan_state(&data_dir).await
-                })
-                .map(|state| {
-                    tracing::info!("LAN 模块启动成功");
-                    Some(state)
-                })
-                .unwrap_or_else(|e| {
-                    tracing::warn!("LAN 模块启动失败（应用其他功能不受影响）: {}", e);
-                    None
-                });
-
             app.manage(AppState {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
-                lan: lan_state.clone(),
+                lan: std::sync::RwLock::new(None),
                 shutdown: std::sync::atomic::AtomicBool::new(false),
+                cleanup_started: std::sync::atomic::AtomicBool::new(false),
             });
 
-            // 启动 LAN 服务端 accept 循环
-            if let Some(lan_state) = lan_state {
+            // 根据持久化设置决定是否在启动时拉起 LAN 模块
+            let lan_enabled = {
+                let state = app.state::<AppState>();
+                let store = state.store();
+                lan::endpoint::load_enabled(&store)
+            };
+            if lan_enabled {
                 let app_handle = app.handle().clone();
-                lan::server::spawn_accept_loop(lan_state.clone(), app_handle.clone());
-                // 启动 mDNS 发现代理，订阅 DiscoveryEvent 更新 peers 缓存并通知前端
-                lan::endpoint::spawn_mdns_discovery_loop(lan_state, app_handle);
+                let result = tauri::async_runtime::block_on(async {
+                    lan::endpoint::start_lan_module(&app_handle).await
+                });
+                match result {
+                    Ok(_) => tracing::info!("LAN 模块启动成功"),
+                    Err(e) => tracing::warn!("LAN 模块启动失败（应用其他功能不受影响）: {}", e),
+                }
             }
 
             // 后台懒加载历史 memo 的 embedding（不阻塞 UI）
@@ -213,6 +224,8 @@ fn main() {
             commands::ai_chat::save_providers_cmd,
             // lan discovery
             commands::lan::lan_discover_peers,
+            commands::lan::lan_get_status,
+            commands::lan::lan_set_enabled,
             commands::lan::lan_get_local_identity,
             commands::lan::lan_update_display_name,
             commands::lan::lan_get_acl_rules,
@@ -239,25 +252,25 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用时出错")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                // 清理 LAN 模块：发送 shutdown 信号通知后台 task 退出。
-                // 不在此 spawn 异步清理 task，否则 runtime 会等待其完成导致进程挂起。
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let state = app_handle.state::<AppState>();
-                if let Ok(lan_state) = state.lan() {
-                    let _ = lan_state.shutdown_tx.send(true);
-                    tracing::info!("LAN shutdown signal sent");
-                }
-                // 标记 backfill_embeddings 任务停止
-                state.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+                if state.begin_shutdown() {
+                    api.prevent_exit();
+                    tracing::info!("收到退出请求，开始清理应用资源");
 
-                // 强制退出进程。
-                // Tauri 的 graceful shutdown 会等待 Tokio runtime 中所有 spawn_blocking
-                // 任务完成（如 backfill_embeddings），以及 iroh Endpoint 的内部 task。
-                // 这些任务可能长时间运行（模型下载、QUIC 连接清理等），导致进程无法退出，
-                // Windows 上 exe 文件保持锁定，下次编译时 cargo 无法覆盖写入。
-                // std::process::exit 立即终止进程，OS 释放所有文件句柄。
-                tracing::info!("Force exiting process");
-                std::process::exit(0);
+                    let app_handle = app_handle.clone();
+                    std::thread::spawn(move || {
+                        cleanup_app_resources(&app_handle);
+                        tracing::info!("应用资源清理完成，开始请求正常退出");
+                        app_handle.exit(0);
+
+                        // 少数阻塞任务无法被 Tokio 立即取消，超时后兜底退出，
+                        // 避免 Windows 上可执行文件和端口长期被占用。
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        tracing::warn!("正常退出超时，执行兜底强制退出");
+                        std::process::exit(0);
+                    });
+                }
             }
         });
 }

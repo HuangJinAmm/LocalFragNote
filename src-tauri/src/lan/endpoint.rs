@@ -5,6 +5,7 @@
 //! - 展示名通过 instance_setting:lan_display_name 存储
 //! - mDNS 发现代码在后台 task 中订阅 DiscoveryEvent 并更新 peers 缓存
 
+use crate::state::AppState;
 use crate::lan::{LanError, LanState, PeerInfo, ALPN};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
@@ -20,6 +21,8 @@ const DEFAULT_DISPLAY_NAME: &str = "LocalFragNote";
 pub const DISPLAY_NAME_KEY: &str = "lan_display_name";
 /// ACL 规则在 app_setting 的 key
 pub const ACL_RULES_KEY: &str = "lan_acl_rules";
+/// 是否启用 LAN 模块的 app_setting key
+pub const ENABLED_KEY: &str = "lan_enabled";
 
 /// 加载或创建 SecretKey，持久化到文件
 fn load_or_create_secret(path: &Path) -> Result<SecretKey, LanError> {
@@ -79,6 +82,60 @@ pub async fn init_lan_state(data_dir: &Path) -> Result<Arc<LanState>, LanError> 
     });
 
     Ok(state)
+}
+
+/// 启动 LAN 模块并注册后台循环。
+pub async fn start_lan_module(app_handle: &tauri::AppHandle) -> Result<Arc<LanState>, LanError> {
+    use tauri::{Emitter, Manager};
+
+    let app_state = app_handle.state::<AppState>();
+    if let Ok(lan) = app_state.lan() {
+        return Ok(lan);
+    }
+
+    let data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| LanError::LocalStore(format!("failed to resolve app_data_dir: {e}")))?;
+    std::fs::create_dir_all(&data_dir)?;
+
+    let state = init_lan_state(&data_dir).await?;
+    let display_name = {
+        let store = app_state.store();
+        load_display_name(&store)
+    };
+    *state.display_name.write().await = display_name;
+
+    app_state.set_lan(Some(state.clone()));
+    crate::lan::server::spawn_accept_loop(state.clone(), app_handle.clone());
+    spawn_mdns_discovery_loop(state.clone(), app_handle.clone());
+
+    let _ = app_handle.emit("lan:status-changed", ());
+    let _ = app_handle.emit("lan:peers-changed", ());
+    tracing::info!("LAN 模块已启动");
+    Ok(state)
+}
+
+/// 停止 LAN 模块并清空运行时状态。
+pub async fn stop_lan_module(app_handle: &tauri::AppHandle) -> Result<(), LanError> {
+    use tauri::{Emitter, Manager};
+
+    let app_state = app_handle.state::<AppState>();
+    let Some(lan_state) = app_state.take_lan() else {
+        let _ = app_handle.emit("lan:status-changed", ());
+        let _ = app_handle.emit("lan:peers-changed", ());
+        return Ok(());
+    };
+
+    let _ = lan_state.shutdown_tx.send(true);
+    tracing::info!("已发送 LAN shutdown 信号");
+    lan_state.endpoint.close().await;
+    tracing::info!("LAN endpoint 已关闭");
+
+    let _ = app_handle.emit("lan:status-changed", ());
+    let _ = app_handle.emit("lan:peers-changed", ());
+    tracing::info!("LAN 模块已停止");
+    Ok(())
 }
 
 /// 从 LanState 获取本机 endpoint_id 的字符串表示
@@ -211,6 +268,24 @@ pub fn load_acl_rules_json(store: &memos_core::Store) -> String {
 pub fn save_acl_rules_json(store: &memos_core::Store, json: &str) -> Result<(), LanError> {
     store
         .with_conn(|c| store.setting.app.upsert(c, ACL_RULES_KEY, json))
+        .map_err(|e| LanError::LocalStore(e.to_string()))?;
+    Ok(())
+}
+
+/// 从 app_setting 读取 LAN 是否启用，默认启用。
+pub fn load_enabled(store: &memos_core::Store) -> bool {
+    store
+        .with_conn(|c| store.setting.app.get(c, ENABLED_KEY))
+        .unwrap_or(None)
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "True"))
+        .unwrap_or(true)
+}
+
+/// 保存 LAN 是否启用到 app_setting。
+pub fn save_enabled(store: &memos_core::Store, enabled: bool) -> Result<(), LanError> {
+    let value = if enabled { "true" } else { "false" };
+    store
+        .with_conn(|c| store.setting.app.upsert(c, ENABLED_KEY, value))
         .map_err(|e| LanError::LocalStore(e.to_string()))?;
     Ok(())
 }

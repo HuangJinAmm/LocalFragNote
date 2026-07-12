@@ -23,6 +23,13 @@ fn next_run_id() -> u32 {
     RUN_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
+pub(crate) fn abort_all() {
+    let aborts = ABORTS.lock().unwrap();
+    for flag in aborts.values() {
+        flag.store(true, Ordering::SeqCst);
+    }
+}
+
 /// 前端传入的聊天消息
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChatMessage {
@@ -124,7 +131,7 @@ fn agent_loop(
     let system_msg = json!({"role": "system", "content": SYSTEM_PROMPT});
 
     for _round in 0..MAX_AGENT_ROUNDS {
-        if abort_flag.load(Ordering::SeqCst) {
+        if abort_flag.load(Ordering::SeqCst) || state.shutdown.load(Ordering::SeqCst) {
             cleanup_abort(run_id);
             return;
         }
@@ -185,7 +192,7 @@ fn agent_loop(
             }
         };
 
-        if abort_flag.load(Ordering::SeqCst) {
+        if abort_flag.load(Ordering::SeqCst) || state.shutdown.load(Ordering::SeqCst) {
             cleanup_abort(run_id);
             return;
         }
@@ -220,6 +227,10 @@ fn agent_loop(
         // 执行每个工具调用
         let store = state.store();
         for tc in &tool_calls {
+            if abort_flag.load(Ordering::SeqCst) || state.shutdown.load(Ordering::SeqCst) {
+                cleanup_abort(run_id);
+                return;
+            }
             let _ = app.emit("ai:tool", ToolPayload {
                 run_id,
                 name: tc.name.clone(),

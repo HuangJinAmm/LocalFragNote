@@ -14,6 +14,13 @@ export interface LocalIdentity {
   display_name: string;
 }
 
+export interface LanStatus {
+  enabled: boolean;
+  running: boolean;
+  peer_id: string;
+  display_name: string;
+}
+
 export interface RemoteProfile {
   display_name: string;
   public_memo_count: number;

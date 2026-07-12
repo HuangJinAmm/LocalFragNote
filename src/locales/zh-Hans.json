@@ -46,10 +46,12 @@
       "loadFailed": "加载远端笔记失败"
     },
     "settings": {
+      "enabled": "启用局域网分享",
       "displayName": "展示名",
       "peerId": "Peer ID",
       "aclRules": "访问控制",
       "statusRunning": "运行中（mDNS 已启用）",
+      "statusStopped": "已关闭",
       "statusError": "错误",
       "accessMode": "访问模式",
       "defaultOpen": "默认开放",

@@ -46,10 +46,12 @@
       "loadFailed": "Failed to load remote memo"
     },
     "settings": {
+      "enabled": "Enable LAN sharing",
       "displayName": "Display name",
       "peerId": "Peer ID",
       "aclRules": "Access control",
       "statusRunning": "Running (mDNS enabled)",
+      "statusStopped": "Stopped",
       "statusError": "Error",
       "accessMode": "Access mode",
       "defaultOpen": "Default open",

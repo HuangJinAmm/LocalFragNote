@@ -8,6 +8,7 @@ use memos_core::types::{RowStatus, Visibility};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::atomic::Ordering;
 use tauri::Manager;
 
 /// 创建 memo 的请求
@@ -121,8 +122,16 @@ pub fn create_memo(
     let id = memo.id;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        if state.shutdown.load(Ordering::SeqCst) {
+            tracing::info!("跳过 memo {} 的 embedding：应用正在退出", id);
+            return;
+        }
         match crate::embedding::embed_to_json(&content) {
             Ok(embedding_json) => {
+                if state.shutdown.load(Ordering::SeqCst) {
+                    tracing::info!("取消写入 memo {} 的 embedding：应用正在退出", id);
+                    return;
+                }
                 // vec0 不支持 UPDATE，先删后插以幂等
                 if let Err(e) = state.store().with_conn(|c| {
                     c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
@@ -196,8 +205,16 @@ pub fn update_memo(
         let id = updated.id;
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<AppState>();
+            if state.shutdown.load(Ordering::SeqCst) {
+                tracing::info!("跳过 memo {} 的 embedding 重建：应用正在退出", id);
+                return;
+            }
             match crate::embedding::embed_to_json(&content) {
                 Ok(embedding_json) => {
+                    if state.shutdown.load(Ordering::SeqCst) {
+                        tracing::info!("取消写入 memo {} 的 embedding 重建结果：应用正在退出", id);
+                        return;
+                    }
                     if let Err(e) = state.store().with_conn(|c| {
                         c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
                         c.execute(

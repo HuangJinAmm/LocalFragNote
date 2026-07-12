@@ -6,7 +6,8 @@ use crate::file_storage;
 use crate::lan::auth::AclRule;
 use crate::lan::client::{call_remote, call_remote_attachment};
 use crate::lan::endpoint::{
-    load_acl_rules_json, load_display_name, save_acl_rules_json, save_display_name,
+    load_acl_rules_json, load_display_name, load_enabled, save_acl_rules_json, save_display_name,
+    save_enabled, start_lan_module, stop_lan_module,
 };
 use crate::lan::protocol::{RemoteMemo, RemoteMemoSummary, Request, ResponseData};
 use crate::lan::PeerInfo;
@@ -20,6 +21,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct LocalIdentity {
+    pub peer_id: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LanStatus {
+    pub enabled: bool,
+    pub running: bool,
     pub peer_id: String,
     pub display_name: String,
 }
@@ -154,21 +163,76 @@ fn create_attachment_internal(
     Ok(())
 }
 
+fn build_lan_status(state: &AppState) -> LanStatus {
+    let display_name = {
+        let store = state.store();
+        load_display_name(&store)
+    };
+    let enabled = {
+        let store = state.store();
+        load_enabled(&store)
+    };
+    let peer_id = state
+        .lan()
+        .map(|lan| lan.endpoint.id().to_string())
+        .unwrap_or_default();
+    let running = !peer_id.is_empty();
+
+    LanStatus {
+        enabled,
+        running,
+        peer_id,
+        display_name,
+    }
+}
+
 // ---------- 命令 ----------
 
 /// 1. 发现局域网 peer（读 mDNS 缓存）
 #[tauri::command]
 pub async fn lan_discover_peers(state: tauri::State<'_, AppState>) -> IpcResult<Vec<PeerInfo>> {
-    let lan = state.lan()?;
+    let Ok(lan) = state.lan() else {
+        return Ok(Vec::new());
+    };
     let peers = lan.peers.read().await;
     Ok(peers.clone())
+}
+
+/// 2. 读取 LAN 开关与运行状态
+#[tauri::command]
+pub async fn lan_get_status(state: tauri::State<'_, AppState>) -> IpcResult<LanStatus> {
+    Ok(build_lan_status(&state))
+}
+
+/// 3. 设置 LAN 模块是否启用
+#[tauri::command]
+pub async fn lan_set_enabled(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> IpcResult<LanStatus> {
+    if enabled {
+        start_lan_module(&app_handle).await?;
+        let store = state.store();
+        save_enabled(&store, true)?;
+    } else {
+        {
+            let store = state.store();
+            save_enabled(&store, false)?;
+        }
+        stop_lan_module(&app_handle).await?;
+    }
+
+    Ok(build_lan_status(&state))
 }
 
 /// 2. 获取本机身份（peer_id + display_name）
 #[tauri::command]
 pub async fn lan_get_local_identity(state: tauri::State<'_, AppState>) -> IpcResult<LocalIdentity> {
-    let lan = state.lan()?;
-    let peer_id = lan.endpoint.id().to_string();
+    let peer_id = state
+        .lan()
+        .map(|lan| lan.endpoint.id().to_string())
+        .unwrap_or_default();
     let display_name = {
         let store = state.store();
         load_display_name(&store)

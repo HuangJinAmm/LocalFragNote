@@ -4,24 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useLanDiscovery } from "@/components/LanDiscovery/hooks";
-import type { AclAccessMode, AclRule } from "@/components/LanDiscovery/types";
+import type { AclAccessMode, AclRule, LanStatus } from "@/components/LanDiscovery/types";
 import { useTranslate } from "@/utils/i18n";
 import toast from "react-hot-toast";
 
 const LanShareSection = () => {
   const t = useTranslate();
   const { peers } = useLanDiscovery();
-  const [peerId, setPeerId] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [rules, setRules] = useState<AclRule[]>([]);
+  const [status, setStatus] = useState<LanStatus | null>(null);
   const [saving, setSaving] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
-    invoke<{ peer_id: string; display_name: string }>("lan_get_local_identity")
-      .then((id) => {
-        setPeerId(id.peer_id);
-        setDisplayName(id.display_name);
+    invoke<LanStatus>("lan_get_status")
+      .then((nextStatus) => {
+        setStatus(nextStatus);
+        setDisplayName(nextStatus.display_name);
       })
       .catch(console.error);
     invoke<AclRule[]>("lan_get_acl_rules")
@@ -32,6 +34,7 @@ const LanShareSection = () => {
   const handleSaveDisplayName = async () => {
     try {
       await invoke("lan_update_display_name", { req: { name: displayName } });
+      setStatus((prev) => (prev ? { ...prev, display_name: displayName } : prev));
       toast.success(t("lan.settings.saved"));
     } catch (e) {
       toast.error(String(e));
@@ -50,6 +53,18 @@ const LanShareSection = () => {
     }
   };
 
+  const handleToggleEnabled = async (enabled: boolean) => {
+    setToggling(true);
+    try {
+      const nextStatus = await invoke<LanStatus>("lan_set_enabled", { enabled });
+      setStatus(nextStatus);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setToggling(false);
+    }
+  };
+
   const getAccessMode = (peerId: string): AclAccessMode => {
     const peerRules = rules.filter((r) => r.peer_id === peerId);
     if (peerRules.length === 0) return "default-open";
@@ -60,10 +75,10 @@ const LanShareSection = () => {
   };
 
   const setAccessMode = (peerId: string, displayName: string, mode: AclAccessMode) => {
-    // Remove all rules for this peer
+    // 先移除该 peer 现有的全部规则
     let newRules = rules.filter((r) => r.peer_id !== peerId);
     if (mode === "default-open") {
-      // No rules
+      // 默认开放时不写入规则
     } else if (mode === "completely-blocked") {
       newRules.push({
         peer_id: peerId,
@@ -72,14 +87,32 @@ const LanShareSection = () => {
         tags: ["__none__"],
       });
     }
-    // restrict-tags mode requires the user to manually select tags;
-    // the actual UI needs a tag multi-select component, simplified here.
+    // 按标签限制模式还需要标签多选 UI，这里先保留现有占位实现。
     setRules(newRules);
   };
 
   return (
     <div className="space-y-6">
-      {/* Local identity */}
+      <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+        <div className="space-y-1">
+          <Label>{t("lan.settings.enabled")}</Label>
+          <div className="text-xs text-muted-foreground">
+            {status?.running
+              ? t("lan.settings.statusRunning")
+              : status?.enabled
+                ? t("lan.settings.statusError")
+                : t("lan.settings.statusStopped")}
+          </div>
+        </div>
+        <Switch
+          checked={Boolean(status?.enabled)}
+          disabled={toggling}
+          onCheckedChange={handleToggleEnabled}
+          aria-label={t("lan.settings.enabled")}
+        />
+      </div>
+
+      {/* 本机身份 */}
       <div className="space-y-2">
         <Label>{t("lan.settings.displayName")}</Label>
         <div className="flex gap-2">
@@ -91,19 +124,27 @@ const LanShareSection = () => {
           <Button onClick={handleSaveDisplayName}>{t("common.save")}</Button>
         </div>
         <div className="text-xs text-muted-foreground">
-          {t("lan.settings.peerId")}: {peerId.slice(0, 16)}…
+          {t("lan.settings.peerId")}: {status?.peer_id ? `${status.peer_id.slice(0, 16)}…` : "-"}
         </div>
       </div>
 
-      {/* Service status */}
+      {/* 运行状态 */}
       <div className="text-sm">
         <span className="inline-flex items-center gap-1">
-          <span className="size-2 rounded-full bg-green-500" />
-          {t("lan.settings.statusRunning")}
+          <span
+            className={`size-2 rounded-full ${
+              status?.running ? "bg-green-500" : status?.enabled ? "bg-amber-500" : "bg-muted-foreground/40"
+            }`}
+          />
+          {status?.running
+            ? t("lan.settings.statusRunning")
+            : status?.enabled
+              ? t("lan.settings.statusError")
+              : t("lan.settings.statusStopped")}
         </span>
       </div>
 
-      {/* ACL rules */}
+      {/* ACL 规则 */}
       <div className="space-y-3">
         <Label>{t("lan.settings.aclRules")}</Label>
         {peers.length === 0 ? (
@@ -141,8 +182,8 @@ const LanShareSection = () => {
                   <div className="text-xs text-muted-foreground">{peer.peer_id.slice(0, 16)}…</div>
                   {mode === "restrict-tags" && (
                     <div className="text-xs text-muted-foreground">
-                      {/* TODO: implement tag multi-select UI, simplified for now */}
-                      Tag selection UI TBD
+                      {/* TODO: 后续补标签多选 UI */}
+                      标签选择 UI 待补充
                     </div>
                   )}
                 </div>

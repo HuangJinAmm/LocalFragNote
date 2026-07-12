@@ -12,6 +12,10 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
+fn is_app_shutting_down(app: &AppHandle) -> bool {
+    app.state::<AppState>().shutdown.load(Ordering::SeqCst)
+}
+
 // ==================== 返回类型 ====================
 
 #[derive(Debug, Serialize)]
@@ -400,6 +404,10 @@ fn card_generation_loop(
     deck: ReviewDeck,
     provider: ProviderConfig,
 ) {
+    if is_app_shutting_down(&app) {
+        return;
+    }
+
     let _ = app.emit(
         "review:generation-started",
         ReviewGenStarted { deck_id, run_id },
@@ -420,6 +428,9 @@ fn card_generation_loop(
 
     match result {
         Ok(content) => {
+            if is_app_shutting_down(&app) {
+                return;
+            }
             let drafts = parse_card_json(&content);
             let mut errors = Vec::new();
 
@@ -440,6 +451,9 @@ fn card_generation_loop(
 
             let mut inserted = 0;
             for draft in &drafts {
+                if is_app_shutting_down(&app) {
+                    return;
+                }
                 match store.with_conn(|c| {
                     let now = chrono::Utc::now().timestamp();
                     let card = ReviewCard {
@@ -505,9 +519,13 @@ fn card_regeneration_loop(
     run_id: u32,
     deck_id: i32,
     old_card: ReviewCard,
-    deck: ReviewDeck,
+    _deck: ReviewDeck,
     provider: ProviderConfig,
 ) {
+    if is_app_shutting_down(&app) {
+        return;
+    }
+
     let _ = app.emit(
         "review:generation-started",
         ReviewGenStarted { deck_id, run_id },
@@ -546,6 +564,9 @@ fn card_regeneration_loop(
 
     match result {
         Ok(content) => {
+            if is_app_shutting_down(&app) {
+                return;
+            }
             let drafts = parse_card_json(&content);
             let state = app.state::<AppState>();
             let store = state.store();
@@ -553,6 +574,9 @@ fn card_regeneration_loop(
             let mut errors = Vec::new();
 
             for draft in &drafts {
+                if is_app_shutting_down(&app) {
+                    return;
+                }
                 match store.with_conn(|c| {
                     let now = chrono::Utc::now().timestamp();
                     let card = ReviewCard {
@@ -616,6 +640,10 @@ fn run_card_agent(
     let system_msg = json!({"role": "system", "content": CARD_GEN_SYSTEM_PROMPT});
 
     for _round in 0..5 {
+        if state.shutdown.load(Ordering::SeqCst) {
+            return Err("应用正在退出，已取消卡片生成".into());
+        }
+
         let mut req_messages = vec![system_msg.clone()];
         req_messages.extend(msgs.clone());
 
@@ -655,6 +683,10 @@ fn run_card_agent(
         })
         .map_err(|e| format!("SSE 读取失败: {e}"))?;
 
+        if state.shutdown.load(Ordering::SeqCst) {
+            return Err("应用正在退出，已取消卡片生成".into());
+        }
+
         if tool_calls.is_empty() {
             return Ok(content);
         }
@@ -678,6 +710,9 @@ fn run_card_agent(
 
         let store = state.store();
         for tc in &tool_calls {
+            if state.shutdown.load(Ordering::SeqCst) {
+                return Err("应用正在退出，已取消卡片生成".into());
+            }
             let args: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Null);
             let result = match execute_tool(&tc.name, &args, &store) {
                 Ok(v) => v,
