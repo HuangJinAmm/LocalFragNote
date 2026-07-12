@@ -666,3 +666,94 @@ fn tag_table_decrements_on_delete() {
     assert!(tags.is_empty(), "删除 memo 后 tag 表应被清空");
 }
 
+#[test]
+fn tag_table_decrements_on_archive() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    let created = memo::create(&conn, &CreateMemo {
+        uid: "test_tag_archive".to_string(),
+        content: "hello #rust".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: Some(RowStatus::Archived),
+        content: None,
+        visibility: None,
+        pinned: None,
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    assert!(tags.is_empty(), "归档后 tag count 应归 0 且被删除");
+}
+
+#[test]
+fn tag_table_increments_on_unarchive() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    let created = memo::create(&conn, &CreateMemo {
+        uid: "test_tag_unarchive".to_string(),
+        content: "hello #rust".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: Some(RowStatus::Archived),
+        content: None,
+        visibility: None,
+        pinned: None,
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    memo::update(&conn, &UpdateMemo {
+        id: created.id,
+        uid: None,
+        row_status: Some(RowStatus::Normal),
+        content: None,
+        visibility: None,
+        pinned: None,
+        payload: None,
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    let rust_count = tags.iter().find(|(n, _)| n == "rust").map(|(_, c)| *c).unwrap_or(0);
+    assert_eq!(rust_count, 1, "恢复后 tag count 应为 1");
+}
+
+#[test]
+fn tag_table_list_ordered_by_count() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    memo::create(&conn, &CreateMemo {
+        uid: "t1".to_string(), content: "#rust".to_string(),
+        visibility: Visibility::Private, pinned: false, payload: json!({}), location: None,
+    }).unwrap();
+    memo::create(&conn, &CreateMemo {
+        uid: "t2".to_string(), content: "#rust #ai".to_string(),
+        visibility: Visibility::Private, pinned: false, payload: json!({}), location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    assert_eq!(tags[0].0, "rust", "count 最高的应排第一");
+    assert_eq!(tags[0].1, 2);
+    assert_eq!(tags[1].0, "ai");
+    assert_eq!(tags[1].1, 1);
+}
+
