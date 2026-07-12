@@ -2,6 +2,7 @@
 
 use crate::error::{CoreError, CoreResult};
 use crate::markdown;
+use crate::tag;
 use crate::types::{validate_uid, RowStatus, Visibility};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -123,6 +124,7 @@ pub fn create(conn: &Connection, create: &CreateMemo) -> CoreResult<Memo> {
     })?;
 
     let id = conn.last_insert_rowid() as i32;
+    tag::upsert_tags_for_content(conn, &create.content)?;
     get(conn, &FindMemo { id: Some(id), ..Default::default() })?
         .ok_or_else(|| CoreError::NotFound(format!("memo id={id}")))
 }

@@ -1,4 +1,5 @@
 use memos_core::*;
+use memos_core::tag;
 use memos_core::attachment::{CreateAttachment, FindAttachment};
 use memos_core::memo::{CreateMemo, FindMemo, UpdateMemo};
 use memos_core::memo_relation::{FindMemoRelation, UpsertMemoRelation};
@@ -509,5 +510,46 @@ fn memo_filter_with_pagination() {
         ..Default::default()
     }).unwrap();
     assert_eq!(list.len(), 2);
+}
+
+#[test]
+fn tag_table_syncs_on_create() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    memo::create(&conn, &CreateMemo {
+        uid: "test_tag_create".to_string(),
+        content: "hello #rust #ai".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    let names: Vec<&str> = tags.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(names.contains(&"rust"), "tag 表应包含 rust");
+    assert!(names.contains(&"ai"), "tag 表应包含 ai");
+
+    let rust_count = tags.iter().find(|(n, _)| n == "rust").map(|(_, c)| *c).unwrap();
+    assert_eq!(rust_count, 1, "rust count 应为 1");
+}
+
+#[test]
+fn tag_table_empty_when_no_tags() {
+    let store = open_test_store();
+    let conn = store.lock_conn();
+
+    memo::create(&conn, &CreateMemo {
+        uid: "test_no_tags".to_string(),
+        content: "just plain text no tags".to_string(),
+        visibility: Visibility::Private,
+        pinned: false,
+        payload: json!({}),
+        location: None,
+    }).unwrap();
+
+    let tags = tag::list_tags(&conn).unwrap();
+    assert!(tags.is_empty(), "无 tag 的 memo 不应产生 tag 表记录");
 }
 
