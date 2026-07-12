@@ -14,6 +14,7 @@ pub mod reaction;
 pub mod review;
 pub mod setting;
 pub mod store;
+pub mod tag;
 pub mod types;
 
 pub use error::{CoreError, CoreResult};
