@@ -312,6 +312,7 @@ pub async fn embed_text(text: String) -> IpcResult<String> {
 }
 
 /// AI 建议标签：根据笔记内容调用 LLM 生成标签建议
+/// 将系统已有标签一并发送给 AI，优先复用已有标签，排除笔记中已存在的标签
 #[tauri::command]
 pub async fn suggest_tags(
     state: tauri::State<'_, AppState>,
@@ -327,13 +328,43 @@ pub async fn suggest_tags(
     // 笔记中已有的标签，用于排除
     let existing_tags: Vec<String> = markdown::extract_tags(&content);
 
-    let system_prompt = "你是一个标签建议专家。根据用户提供的笔记内容，建议 3-5 个合适的标签。\n\n规则：\n1. 只返回标签名，不含 # 号\n2. 用逗号分隔\n3. 不要返回笔记中已有的标签\n4. 标签应简短（1-4个字/词），能概括笔记主题\n5. 只返回标签列表，不要其他文字";
+    // 查询系统中所有已使用的标签，提供给 AI 优先复用
+    let system_tags: Vec<String> = {
+        let contents = store.with_conn(|c| -> memos_core::CoreResult<Vec<String>> {
+            let mut stmt = c.prepare("SELECT content FROM memo WHERE row_status = 'NORMAL'")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })?;
+        let mut all: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for c in contents {
+            for t in markdown::extract_tags(&c) {
+                all.insert(t);
+            }
+        }
+        all.into_iter().collect()
+    };
+
+    let system_prompt = "你是一个标签建议专家。根据用户提供的笔记内容，建议 3-5 个合适的标签。\n\n规则：\n1. 只返回标签名，不含 # 号\n2. 用逗号分隔\n3. 优先从「系统已有标签」中选择与笔记相关的标签，避免创建含义重复的新标签\n4. 只有当已有标签都无法概括笔记主题时，才创建新标签\n5. 不要返回笔记中已经包含的标签\n6. 标签应简短（1-4个字/词），能概括笔记主题\n7. 只返回标签列表，不要其他文字";
+
+    let user_message = if system_tags.is_empty() {
+        format!("笔记内容：\n\n{}", content)
+    } else {
+        format!(
+            "系统已有标签：\n{}\n\n笔记内容：\n\n{}",
+            system_tags.join(", "),
+            content
+        )
+    };
 
     let body = serde_json::json!({
         "model": provider.model,
         "messages": [
             { "role": "system", "content": system_prompt },
-            { "role": "user", "content": content },
+            { "role": "user", "content": user_message },
         ],
         "stream": false,
     });
@@ -372,7 +403,7 @@ pub async fn suggest_tags(
         .and_then(|c| c.as_str())
         .unwrap_or("");
 
-    // 解析 AI 返回的标签（逗号或顿号分隔）
+    // 解析 AI 返回的标签（逗号或顿号分隔），去除 # 前缀，排除笔记中已有的标签
     let suggested: Vec<String> = ai_text
         .split([',', '，', '、'])
         .map(|s| s.trim().replace('#', "").trim().to_string())
