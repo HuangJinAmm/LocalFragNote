@@ -18,7 +18,10 @@
   }
   & .cm-content {
     font-family: inherit;
-    padding: 0;
+    /* 1px left padding gives the drawSelection() caret (border-left on
+       .cm-cursor) room to render at line start; without it the cursor is
+       clipped by .cm-layer's `contain: strict` when at position 0. */
+    padding: 0 0 0 1px;
     caret-color: var(--foreground);
   }
   & .cm-line {
