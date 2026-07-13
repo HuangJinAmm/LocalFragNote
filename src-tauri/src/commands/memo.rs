@@ -103,7 +103,6 @@ fn should_store_embedding(row_status: RowStatus) -> bool {
 }
 
 pub(crate) fn delete_memo_embedding(store: &Store, id: i32) -> IpcResult<()> {
-    tracing::debug!("delete_memo_embedding: memo_id={}", id);
     store.with_conn(|c| {
         c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
         Ok(())
@@ -111,106 +110,43 @@ pub(crate) fn delete_memo_embedding(store: &Store, id: i32) -> IpcResult<()> {
     Ok(())
 }
 
-/// 将预先计算好的 embedding JSON 写入 memo_vec（短暂持有 Store 锁）
-fn write_memo_embedding(store: &Store, id: i32, embedding_json: &str) -> IpcResult<()> {
-    let write_start = std::time::Instant::now();
+pub(crate) fn upsert_memo_embedding(store: &Store, id: i32, content: &str) -> IpcResult<()> {
+    let embedding_json = crate::embedding::embed_to_json(content)?;
     store.with_conn(|c| {
         // vec0 不支持 UPDATE，先删后插以幂等
         c.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id])?;
         c.execute(
             "INSERT INTO memo_vec(rowid, embedding) VALUES (?, ?)",
-            params![id, embedding_json],
+            params![id, &embedding_json],
         )?;
         Ok(())
     })?;
-    tracing::debug!(
-        "write_memo_embedding: memo_id={}, json_len={}, 写库耗时 {:?}",
-        id,
-        embedding_json.len(),
-        write_start.elapsed()
-    );
     Ok(())
 }
 
-/// 同步 memo 的 embedding：先在不持 Store 锁的情况下做 ONNX 推理（可能耗时数秒到数十秒），
-/// 再短暂持锁写入 DB。避免推理期间阻塞其他数据库操作导致 UI 无响应。
-pub(crate) fn sync_memo_embedding_split(state: &AppState, memo: &Memo) -> IpcResult<()> {
-    let sync_start = std::time::Instant::now();
-    if !should_store_embedding(memo.row_status) {
-        tracing::debug!(
-            "sync_memo_embedding_split: memo_id={} row_status={:?} 非 NORMAL，删除 embedding",
-            memo.id,
-            memo.row_status
-        );
-        let store = state.store();
-        let r = delete_memo_embedding(&store, memo.id);
-        tracing::info!(
-            "sync_memo_embedding_split: memo_id={} 删除完成，耗时 {:?}, 结果={:?}",
-            memo.id,
-            sync_start.elapsed(),
-            r.as_ref().err()
-        );
-        return r;
+pub(crate) fn sync_memo_embedding_for_memo(store: &Store, memo: &Memo) -> IpcResult<()> {
+    if should_store_embedding(memo.row_status) {
+        upsert_memo_embedding(store, memo.id, &memo.content)
+    } else {
+        delete_memo_embedding(store, memo.id)
     }
-    let content_chars = memo.content.chars().count();
-    tracing::info!(
-        "sync_memo_embedding_split: memo_id={} 开始生成 embedding (chars={})",
-        memo.id,
-        content_chars
-    );
-    // 1. 计算 embedding（不持 Store 锁，避免 ONNX 推理阻塞所有 DB 操作）
-    let embed_start = std::time::Instant::now();
-    let embedding_json = crate::embedding::embed_to_json(&memo.content)?;
-    let embed_elapsed = embed_start.elapsed();
-    tracing::info!(
-        "sync_memo_embedding_split: memo_id={} embedding 生成完成，耗时 {:?}",
-        memo.id,
-        embed_elapsed
-    );
-    // 2. 短暂持锁写入
-    let store = state.store();
-    let write_result = write_memo_embedding(&store, memo.id, &embedding_json);
-    tracing::info!(
-        "sync_memo_embedding_split: memo_id={} 总耗时 {:?}, 结果={:?}",
-        memo.id,
-        sync_start.elapsed(),
-        write_result.as_ref().err()
-    );
-    write_result
 }
 
-/// 异步同步 memo 的 embedding：在 spawn_blocking 中执行，不阻塞调用方；
-/// 推理期间不持有 Store 锁。fire-and-forget，错误仅记录日志。
-pub(crate) fn spawn_sync_memo_embedding(app: tauri::AppHandle, memo: Memo, action_label: &'static str) {
-    let memo_id = memo.id;
-    tracing::info!(
-        "spawn_sync_memo_embedding: 调度 memo_id={} action={} 异步同步 embedding",
-        memo_id,
-        action_label
-    );
+fn spawn_sync_memo_embedding(app: tauri::AppHandle, memo: Memo, action_label: &'static str) {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         if state.shutdown.load(Ordering::SeqCst) {
-            tracing::info!(
-                "spawn_sync_memo_embedding: 跳过 memo_id={} 的 embedding 同步：应用正在退出",
-                memo_id
-            );
+            tracing::info!("跳过 memo {} 的 embedding 同步：应用正在退出", memo.id);
             return;
         }
 
-        if let Err(e) = sync_memo_embedding_split(&state, &memo) {
-            tracing::warn!(
-                "spawn_sync_memo_embedding: memo_id={} 在{}后同步 embedding 失败: {}",
-                memo_id,
-                action_label,
-                e
-            );
-        } else {
-            tracing::info!(
-                "spawn_sync_memo_embedding: memo_id={} {} embedding 同步成功",
-                memo_id,
-                action_label
-            );
+        let result = {
+            let store = state.store();
+            sync_memo_embedding_for_memo(&store, &memo)
+        };
+
+        if let Err(e) = result {
+            tracing::warn!("memo {} 在{}后同步 embedding 失败: {}", memo.id, action_label, e);
         }
     });
 }
@@ -369,27 +305,9 @@ pub fn list_memo_timestamps(state: tauri::State<'_, AppState>) -> IpcResult<Memo
 /// 异步执行：模型下载与推理可能耗时数秒到数十秒，避免阻塞 Tauri 主线程
 #[tauri::command]
 pub async fn embed_text(text: String) -> IpcResult<String> {
-    let cmd_start = std::time::Instant::now();
-    let chars = text.chars().count();
-    tracing::info!("embed_text 命令调用: chars={}", chars);
-    let result = tauri::async_runtime::spawn_blocking(move || crate::embedding::embed_to_json(&text))
+    tauri::async_runtime::spawn_blocking(move || crate::embedding::embed_to_json(&text))
         .await
-        .map_err(|e| IpcError::Internal(format!("embed_text 任务失败: {e}")))?;
-    match &result {
-        Ok(s) => tracing::info!(
-            "embed_text 命令完成: chars={}, json_len={}, 总耗时 {:?}",
-            chars,
-            s.len(),
-            cmd_start.elapsed()
-        ),
-        Err(e) => tracing::warn!(
-            "embed_text 命令失败: chars={}, 总耗时 {:?}, err={}",
-            chars,
-            cmd_start.elapsed(),
-            e
-        ),
-    }
-    result
+        .map_err(|e| IpcError::Internal(format!("embed_text 任务失败: {e}")))?
 }
 
 /// AI 建议标签：根据笔记内容调用 LLM 生成标签建议
