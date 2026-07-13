@@ -189,6 +189,7 @@ fn execute_create_memo(
         pinned: false,
         payload: serde_json::Value::Object(Default::default()),
         location: None,
+        parent_id: None,
     };
     let memo = store.with_conn(|c| memos_core::memo::create(c, &create))?;
     // 异步同步 embedding（fire-and-forget）：在独立 spawn_blocking 中执行，

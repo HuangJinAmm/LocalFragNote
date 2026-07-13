@@ -391,6 +391,7 @@ pub async fn lan_copy_memo_to_local(
             pinned: false,
             payload: serde_json::json!({}),
             location: None,
+            parent_id: None,
         };
         store.with_conn(|c| memos_core::memo::create(c, &create))?
     };

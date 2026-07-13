@@ -1,17 +1,14 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { isEqual } from "lodash-es";
-import { CheckCircleIcon, ChevronRightIcon, Code2Icon, HashIcon, ImageIcon, LinkIcon, type LucideIcon, Share2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckCircleIcon, ChevronRightIcon, Code2Icon, HashIcon, ImageIcon, LinkIcon, type LucideIcon } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import useCurrentUser from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
 import { Memo, Memo_PropertySchema } from "@/types/proto/api/v1/memo_service_pb";
 import { type Translations, useTranslate } from "@/utils/i18n";
 import { extractHeadings } from "@/utils/markdown-manipulation";
-import { isSuperUser } from "@/utils/user";
 import MemoOutline from "./MemoOutline";
-import MemoSharePanel from "./MemoSharePanel";
 
 interface Props {
   memo: Memo;
@@ -45,10 +42,7 @@ const SHARE_ACTION_ROW_CLASSES =
 
 const MemoDetailSidebar = ({ memo, className, onShareImageOpen }: Props) => {
   const t = useTranslate();
-  const currentUser = useCurrentUser();
-  const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const property = create(Memo_PropertySchema, memo.property || {});
-  const canManageShares = !memo.parent && (memo.creator === currentUser?.name || isSuperUser(currentUser));
   const hasUpdated = !isEqual(memo.createTime, memo.updateTime);
   const headings = useMemo(() => extractHeadings(memo.content), [memo.content]);
 
@@ -68,28 +62,16 @@ const MemoDetailSidebar = ({ memo, className, onShareImageOpen }: Props) => {
         </SidebarSection>
       )}
 
-      {(canManageShares || onShareImageOpen) && (
+      {onShareImageOpen && (
         <SidebarSection label={t("memo.share.section-label")}>
           <div className="overflow-hidden rounded-md border border-border/50 bg-muted/20">
-            {onShareImageOpen && (
-              <Button variant="ghost" size="sm" className={SHARE_ACTION_ROW_CLASSES} onClick={onShareImageOpen}>
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <ImageIcon className="size-3.5 shrink-0 text-muted-foreground/90" />
-                  <span className="truncate">{t("memo.share.open-image")}</span>
-                </span>
-                <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/35" />
-              </Button>
-            )}
-            {onShareImageOpen && canManageShares && <div className="border-t border-border/50" />}
-            {canManageShares && (
-              <Button variant="ghost" size="sm" className={SHARE_ACTION_ROW_CLASSES} onClick={() => setSharePanelOpen(true)}>
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <Share2Icon className="size-3.5 shrink-0 text-muted-foreground/90" />
-                  <span className="truncate">{t("memo.share.open-panel")}</span>
-                </span>
-                <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/35" />
-              </Button>
-            )}
+            <Button variant="ghost" size="sm" className={SHARE_ACTION_ROW_CLASSES} onClick={onShareImageOpen}>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <ImageIcon className="size-3.5 shrink-0 text-muted-foreground/90" />
+                <span className="truncate">{t("memo.share.open-image")}</span>
+              </span>
+              <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/35" />
+            </Button>
           </div>
         </SidebarSection>
       )}
@@ -131,7 +113,6 @@ const MemoDetailSidebar = ({ memo, className, onShareImageOpen }: Props) => {
         </SidebarSection>
       )}
 
-      {sharePanelOpen && <MemoSharePanel memoName={memo.name} open={sharePanelOpen} onClose={() => setSharePanelOpen(false)} />}
     </aside>
   );
 };

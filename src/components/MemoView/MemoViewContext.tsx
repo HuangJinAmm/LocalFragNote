@@ -33,8 +33,13 @@ export const useMemoViewContext = (): MemoViewContextValue => {
   return context;
 };
 
-export const computeCommentAmount = (memo: Memo): number =>
-  memo.relations.filter((r) => r.type === MemoRelation_Type.COMMENT && r.relatedMemo?.name === memo.name).length;
+export const computeCommentAmount = (memo: Memo): number => {
+  // 本地模式：优先读取 connect.ts 注入的 commentAmount（基于 parent_id 批量查询）
+  const injected = (memo as any).commentAmount;
+  if (typeof injected === "number") return injected;
+  // 兼容服务端模式：基于 relations 中的 COMMENT 类型关系
+  return memo.relations.filter((r) => r.type === MemoRelation_Type.COMMENT && r.relatedMemo?.name === memo.name).length;
+};
 
 export const useMemoViewDerived = () => {
   const { memo, isArchived, readonly } = useMemoViewContext();
