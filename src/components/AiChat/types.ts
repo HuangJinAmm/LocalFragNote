@@ -1,3 +1,16 @@
+/// OpenAI vision content array 中的部分
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/// 待发送的图片（前端临时状态）
+export interface PendingImage {
+  id: string;
+  dataUrl: string;
+  name: string;
+  size: number;
+}
+
 /// AI Provider 配置
 export interface ProviderConfig {
   id: string;
@@ -11,7 +24,7 @@ export interface ProviderConfig {
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
-  content: string;
+  content: string | ContentPart[];
   /** 助手消息流式中的标记 */
   streaming?: boolean;
   /** tool 消息的展示标记 */
@@ -23,7 +36,7 @@ export interface ChatMessage {
 /// 发送给后端的消息格式
 export interface WireMessage {
   role: string;
-  content: string;
+  content: string | ContentPart[];
   tool_calls?: unknown;
   tool_call_id?: string;
 }
