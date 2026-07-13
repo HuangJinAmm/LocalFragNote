@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import type { ChatMessage, WireMessage } from "./types";
+import type { ChatMessage, ContentPart, WireMessage } from "./types";
 
 const MAX_MESSAGES_TO_SEND = 20;
 
@@ -101,7 +101,7 @@ export function useAiChat({ providerId }: UseAiChatOptions) {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (content: string | ContentPart[]) => {
       if (!providerId) {
         toast.error("请先选择 Provider");
         return;
@@ -111,7 +111,7 @@ export function useAiChat({ providerId }: UseAiChatOptions) {
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
-        content: text,
+        content,
       };
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -124,7 +124,7 @@ export function useAiChat({ providerId }: UseAiChatOptions) {
       const wireMessages: WireMessage[] = [...messages, userMsg]
         .filter((m) => m.role !== "tool" && !m.isToolCall)
         .slice(-MAX_MESSAGES_TO_SEND)
-        .map((m) => ({ role: m.role, content: m.content }));
+        .map((m) => ({ role: m.role, content: m.content as string | ContentPart[] }));
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsStreaming(true);
