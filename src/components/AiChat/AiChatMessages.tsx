@@ -2,7 +2,7 @@ import { BotIcon, UserIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { MemoMarkdownRenderer } from "@/components/MemoContent/MemoMarkdownRenderer";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ContentPart } from "./types";
 
 interface AiChatMessagesProps {
   messages: ChatMessage[];
@@ -17,6 +17,33 @@ export function AiChatMessages({ messages }: AiChatMessagesProps) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const renderUserContent = (content: string | ContentPart[]) => {
+    if (typeof content === "string") {
+      return <p className="whitespace-pre-wrap break-words">{content}</p>;
+    }
+    return (
+      <div className="space-y-2">
+        {content.map((part, i) => {
+          if (part.type === "text") {
+            return (
+              <p key={i} className="whitespace-pre-wrap break-words">
+                {part.text}
+              </p>
+            );
+          }
+          return (
+            <img
+              key={i}
+              src={part.image_url.url}
+              alt=""
+              className="max-w-48 rounded-md"
+            />
+          );
+        })}
+      </div>
+    );
+  };
 
   if (messages.length === 0) {
     return (
@@ -33,7 +60,7 @@ export function AiChatMessages({ messages }: AiChatMessagesProps) {
         if (msg.role === "tool") {
           return (
             <div key={msg.id} className="text-xs text-muted-foreground px-2 py-1 rounded bg-muted/50">
-              {msg.content}
+              {typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)}
             </div>
           );
         }
@@ -61,8 +88,8 @@ export function AiChatMessages({ messages }: AiChatMessagesProps) {
               )}
             >
               {isUser ? (
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              ) : msg.content ? (
+                renderUserContent(msg.content)
+              ) : typeof msg.content === "string" && msg.content ? (
                 <div className="break-words">
                   <MemoMarkdownRenderer
                     content={msg.content}
