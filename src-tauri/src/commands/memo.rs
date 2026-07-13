@@ -138,7 +138,7 @@ pub(crate) fn sync_memo_embedding_for_memo(store: &Store, memo: &Memo) -> IpcRes
     }
 }
 
-fn spawn_sync_memo_embedding(app: tauri::AppHandle, memo: Memo, action_label: &'static str) {
+pub(crate) fn spawn_sync_memo_embedding(app: tauri::AppHandle, memo: Memo, action_label: &'static str) {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         if state.shutdown.load(Ordering::SeqCst) {
