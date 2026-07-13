@@ -34,7 +34,8 @@ pub(crate) fn abort_all() {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    /// content 可以是字符串（纯文本）或数组（OpenAI vision content array）
+    pub content: Value,
     /// 助手消息的 tool_calls（OpenAI 格式）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Value>,
