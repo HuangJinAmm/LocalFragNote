@@ -176,6 +176,7 @@ fn execute_create_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Va
         pinned: false,
         payload: serde_json::Value::Object(Default::default()),
         location: None,
+        parent_id: None,
     };
     let memo = store.with_conn(|c| memos_core::memo::create(c, &create))?;
     if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(store, &memo) {

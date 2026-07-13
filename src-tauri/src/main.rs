@@ -177,6 +177,8 @@ fn main() {
             commands::memo::create_memo,
             commands::memo::get_memo,
             commands::memo::list_memos,
+            commands::memo::list_memo_comments,
+            commands::memo::count_memo_comments_batch,
             commands::memo::update_memo,
             commands::memo::delete_memo,
             commands::memo::render_memo_content,

@@ -7,3 +7,4 @@ dist/
 
 # Tauri
 src-tauri/gen/
+src-tauri/lib/

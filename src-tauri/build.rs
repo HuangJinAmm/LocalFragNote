@@ -13,7 +13,7 @@ fn main() {
 
         if !dll_path.exists() {
             println!("cargo:warning=ONNX Runtime DLL 未找到，正在下载...");
-            let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip";
+            let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.24.1/onnxruntime-win-x64-1.24.1.zip";
             let zip_path = lib_dir.join("onnxruntime.zip");
 
             // 使用 PowerShell 下载
@@ -33,7 +33,7 @@ fn main() {
                             "-NoProfile",
                             "-Command",
                             &format!(
-                                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force; Move-Item -Force '{}\\onnxruntime-win-x64-1.20.1\\lib\\onnxruntime.dll' '{}'",
+                                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force; Move-Item -Force '{}\\onnxruntime-win-x64-1.24.1\\lib\\onnxruntime.dll' '{}'",
                                 zip_path.display(),
                                 lib_dir.display(),
                                 lib_dir.display(),

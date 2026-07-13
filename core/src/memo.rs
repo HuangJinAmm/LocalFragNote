@@ -30,6 +30,9 @@ pub struct Memo {
     pub payload: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<MemoLocation>,
+    /// 父 memo id；Some(id) 表示这是评论，None 表示主笔记
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<i32>,
 }
 
 /// 创建笔记
@@ -41,6 +44,8 @@ pub struct CreateMemo {
     pub pinned: bool,
     pub payload: Value,
     pub location: Option<MemoLocation>,
+    /// 父 memo id；Some(id) 创建评论，None 创建主笔记
+    pub parent_id: Option<i32>,
 }
 
 /// 更新笔记（所有字段可选）
@@ -90,6 +95,10 @@ pub struct FindMemo {
     pub order_by_pinned: bool,
     pub order_by_updated_ts: bool,
     pub order_by_time_asc: bool,
+    /// true = 只查主笔记（parent_id IS NULL）；与 comments_of 互斥
+    pub main_only: bool,
+    /// Some(id) = 查指定父 memo 的评论（parent_id = id）；与 main_only 互斥
+    pub comments_of: Option<i32>,
 }
 
 /// 创建
@@ -104,7 +113,7 @@ pub fn create(conn: &Connection, create: &CreateMemo) -> CoreResult<Memo> {
         None => None,
     };
     conn.execute(
-        "INSERT INTO memo (uid, content, visibility, pinned, payload, location) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO memo (uid, content, visibility, pinned, payload, location, parent_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             &create.uid,
             &create.content,
@@ -112,6 +121,7 @@ pub fn create(conn: &Connection, create: &CreateMemo) -> CoreResult<Memo> {
             pinned_int,
             &payload_str,
             &location_str,
+            &create.parent_id,
         ],
     )
     .map_err(|e| {
@@ -124,7 +134,10 @@ pub fn create(conn: &Connection, create: &CreateMemo) -> CoreResult<Memo> {
     })?;
 
     let id = conn.last_insert_rowid() as i32;
-    tag::upsert_tags_for_content(conn, &create.content)?;
+    // 评论不提取标签（仅主笔记参与标签统计）
+    if create.parent_id.is_none() {
+        tag::upsert_tags_for_content(conn, &create.content)?;
+    }
     get(conn, &FindMemo { id: Some(id), ..Default::default() })?
         .ok_or_else(|| CoreError::NotFound(format!("memo id={id}")))
 }
@@ -164,8 +177,16 @@ pub fn list(conn: &Connection, find: &FindMemo) -> CoreResult<Vec<Memo>> {
     } else {
         sql.push_str("content, ");
     }
-    sql.push_str("visibility, pinned, payload, location FROM memo WHERE 1=1");
+    sql.push_str("visibility, pinned, payload, location, parent_id FROM memo WHERE 1=1");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    // 评论过滤：comments_of 优先，否则 main_only 时只查主笔记
+    if let Some(parent_id) = find.comments_of {
+        sql.push_str(" AND parent_id = ?");
+        args.push(Box::new(parent_id));
+    } else if find.main_only {
+        sql.push_str(" AND parent_id IS NULL");
+    }
 
     if let Some(id) = find.id {
         sql.push_str(" AND id = ?");
@@ -307,6 +328,7 @@ pub fn list(conn: &Connection, find: &FindMemo) -> CoreResult<Vec<Memo>> {
                 pinned: pinned_int != 0,
                 payload: serde_json::from_str(&payload_str).unwrap_or(Value::Object(Default::default())),
                 location,
+                parent_id: row.get(10)?,
             })
         },
     )?;
@@ -404,12 +426,12 @@ pub fn update(conn: &Connection, update: &UpdateMemo) -> CoreResult<Memo> {
 
     args.push(Box::new(update.id));
 
-    // 若 content 变化，先读取旧 content 用于 tag 同步
-    let old_content: Option<String> = if update.content.is_some() {
+    // 若 content 变化，先读取旧 content 和 parent_id 用于 tag 同步（评论跳过）
+    let old_content_with_parent: Option<(String, Option<i32>)> = if update.content.is_some() {
         conn.query_row(
-            "SELECT content FROM memo WHERE id = ?",
+            "SELECT content, parent_id FROM memo WHERE id = ?",
             params![update.id],
-            |r| r.get(0),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i32>>(1)?)),
         )
         .ok()
     } else {
@@ -444,10 +466,12 @@ pub fn update(conn: &Connection, update: &UpdateMemo) -> CoreResult<Memo> {
         return Err(CoreError::NotFound(format!("memo id={}", update.id)));
     }
 
-    // 同步 tag 表
-    if let Some(ref old_content) = old_content {
-        let new_content = update.content.as_deref().unwrap_or(old_content);
-        tag::sync_tags_on_update(conn, old_content, new_content)?;
+    // 同步 tag 表（评论跳过：评论不参与标签统计）
+    if let Some((ref old_content, parent_id)) = old_content_with_parent {
+        if parent_id.is_none() {
+            let new_content = update.content.as_deref().unwrap_or(old_content);
+            tag::sync_tags_on_update(conn, old_content, new_content)?;
+        }
     }
 
     // row_status 变化时同步 tag count
@@ -466,14 +490,18 @@ pub fn update(conn: &Connection, update: &UpdateMemo) -> CoreResult<Memo> {
         .ok_or_else(|| CoreError::NotFound(format!("memo id={}", update.id)))
 }
 
-/// 删除（含级联清理 memo_relation、attachment 关联、向量索引）
+/// 删除（含级联清理 memo_relation、attachment 关联、向量索引、评论）
 pub fn delete(conn: &mut Connection, id: i32) -> CoreResult<()> {
     let tx = conn.transaction()?;
-    // 查询 memo uid，用于标记回顾卡片
-    let uid: Option<String> = tx
-        .query_row("SELECT uid FROM memo WHERE id = ?", params![id], |r| r.get(0))
-        .ok();
-    // 查询 content，用于递减 tag 计数
+    // 查询 memo uid 和 parent_id，用于标记回顾卡片和判断是否评论
+    let (uid, parent_id): (Option<String>, Option<i32>) = tx
+        .query_row("SELECT uid, parent_id FROM memo WHERE id = ?", params![id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .ok()
+        .map(|(u, p): (Option<String>, Option<i32>)| (u, p))
+        .unwrap_or((None, None));
+    // 查询 content，用于递减 tag 计数（仅主笔记）
     let content: Option<String> = tx
         .query_row("SELECT content FROM memo WHERE id = ?", params![id], |r| r.get(0))
         .ok();
@@ -494,9 +522,15 @@ pub fn delete(conn: &mut Connection, id: i32) -> CoreResult<()> {
     // 删除向量索引（FTS 由 memo_ad 触发器自动清理）
     let _ = tx.execute("DELETE FROM memo_vec WHERE rowid = ?", params![id]);
     let affected = tx.execute("DELETE FROM memo WHERE id = ?", params![id])?;
-    // 递减 tag 计数
-    if let Some(ref content) = content {
-        tag::decrement_tags_for_content(&tx, content)?;
+    // 删除主笔记时级联删除其评论（评论不进 FTS/embedding，无需额外清理）
+    if parent_id.is_none() {
+        tx.execute("DELETE FROM memo WHERE parent_id = ?", params![id])?;
+    }
+    // 递减 tag 计数（仅主笔记参与 tag 统计）
+    if parent_id.is_none() {
+        if let Some(ref content) = content {
+            tag::decrement_tags_for_content(&tx, content)?;
+        }
     }
     tx.commit()?;
     if affected == 0 {
@@ -518,6 +552,7 @@ mod tests {
             pinned: false,
             payload: serde_json::Value::Object(Default::default()),
             location: None,
+            parent_id: None,
         }
     }
 

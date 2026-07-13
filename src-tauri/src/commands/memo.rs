@@ -25,6 +25,9 @@ pub struct CreateMemoRequest {
     pub payload: Value,
     #[serde(default)]
     pub location: Option<MemoLocation>,
+    /// 父 memo id；Some(id) 创建评论，None 创建主笔记
+    #[serde(default)]
+    pub parent_id: Option<i32>,
 }
 
 fn default_payload() -> Value {
@@ -77,6 +80,9 @@ pub struct ListMemosRequest {
     pub order_by_updated_ts: bool,
     #[serde(default)]
     pub order_by_time_asc: bool,
+    /// Some(id) = 查指定父 memo 的评论；None = 查主笔记（默认）
+    #[serde(default)]
+    pub comments_of: Option<i32>,
 }
 
 /// 列表响应：附带统计信息
@@ -159,6 +165,7 @@ pub fn create_memo(
     state: tauri::State<'_, AppState>,
     req: CreateMemoRequest,
 ) -> IpcResult<Memo> {
+    let is_comment = req.parent_id.is_some();
     let memo = {
         let store = state.store();
         store.with_conn(|c| {
@@ -169,10 +176,14 @@ pub fn create_memo(
                 pinned: req.pinned,
                 payload: req.payload,
                 location: req.location,
+                parent_id: req.parent_id,
             })
         })?
     };
-    spawn_sync_memo_embedding(app, memo.clone(), "创建");
+    // 评论不做 embedding（仅主笔记参与向量搜索）
+    if !is_comment {
+        spawn_sync_memo_embedding(app, memo.clone(), "创建");
+    }
 
     Ok(memo)
 }
@@ -202,6 +213,57 @@ pub fn list_memos(
     Ok(ListMemosResponse { memos, total })
 }
 
+/// 列出指定 memo 的评论
+/// limit = Some(n) 时只返回前 n 条；order_desc = true 时按创建时间降序（最新在前）
+#[tauri::command]
+pub fn list_memo_comments(
+    state: tauri::State<'_, AppState>,
+    parent_id: i32,
+    limit: Option<i32>,
+    order_desc: Option<bool>,
+) -> IpcResult<Vec<Memo>> {
+    let store = state.store();
+    let memos = store.with_conn(|c| {
+        memos_core::memo::list(c, &FindMemo {
+            comments_of: Some(parent_id),
+            order_by_time_asc: !order_desc.unwrap_or(false),
+            limit,
+            ..Default::default()
+        })
+    })?;
+    Ok(memos)
+}
+
+/// 批量查询指定 memos 的评论数（仅主笔记有评论，评论返回 0）
+#[tauri::command]
+pub fn count_memo_comments_batch(
+    state: tauri::State<'_, AppState>,
+    parent_ids: Vec<i32>,
+) -> IpcResult<Vec<(i32, i32)>> {
+    if parent_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let store = state.store();
+    let counts = store.with_conn(|c| -> memos_core::error::CoreResult<Vec<(i32, i32)>> {
+        let placeholders = parent_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT parent_id, COUNT(*) FROM memo WHERE parent_id IN ({}) GROUP BY parent_id",
+            placeholders
+        );
+        let mut stmt = c.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(parent_ids.iter()),
+            |r| Ok((r.get::<_, i32>(0)?, r.get::<_, i32>(1)?)),
+        )?;
+        let mut result: Vec<(i32, i32)> = Vec::new();
+        for r in rows {
+            result.push(r?);
+        }
+        Ok(result)
+    })?;
+    Ok(counts)
+}
+
 #[tauri::command]
 pub fn update_memo(
     app: tauri::AppHandle,
@@ -225,7 +287,8 @@ pub fn update_memo(
         })?
     };
 
-    if should_sync_embedding {
+    // 评论不做 embedding（仅主笔记参与向量搜索）
+    if should_sync_embedding && updated.parent_id.is_none() {
         spawn_sync_memo_embedding(app, updated.clone(), "更新");
     }
 
@@ -416,6 +479,12 @@ pub async fn suggest_tags(
 // ---------- 辅助 ----------
 
 fn build_find(req: ListMemosRequest) -> FindMemo {
+    // comments_of 优先：查评论时不过滤 main_only；否则默认只查主笔记
+    let (main_only, comments_of) = if let Some(parent_id) = req.comments_of {
+        (false, Some(parent_id))
+    } else {
+        (true, None)
+    };
     FindMemo {
         id: req.id,
         uid: req.uid,
@@ -438,5 +507,7 @@ fn build_find(req: ListMemosRequest) -> FindMemo {
         order_by_pinned: req.order_by_pinned,
         order_by_updated_ts: req.order_by_updated_ts,
         order_by_time_asc: req.order_by_time_asc,
+        main_only,
+        comments_of,
     }
 }

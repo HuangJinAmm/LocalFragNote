@@ -266,13 +266,16 @@ export const memoServiceClient = {
     // 批量查询 attachments 和 relations，避免 N+1
     let rawAtts: any[] = [];
     let rawRels: any[] = [];
+    let commentCountPairs: [number, number][] = [];
     if (memoIds.length > 0) {
-      const [attRes, relRes] = await Promise.all([
+      const [attRes, relRes, countRes] = await Promise.all([
         invoke<any[]>("list_attachments", { req: { memo_id_list: memoIds } }),
         invoke<any[]>("list_memo_relations", { req: { memo_id_list: memoIds } }),
+        invoke<[number, number][]>("count_memo_comments_batch", { parentIds: memoIds }),
       ]);
       rawAtts = attRes;
       rawRels = relRes;
+      commentCountPairs = countRes;
     }
 
     // 按原始 memo_id 分组 attachments（AttachmentWithBlob flatten 后 memo_id 在顶层）
@@ -301,9 +304,16 @@ export const memoServiceClient = {
       }
     }
 
-    const memos = res.memos.map((m: any) =>
-      toProtoMemo(m, attsByMemoId.get(m.id) ?? [], relsByMemoId.get(m.id) ?? []),
-    );
+    // 建立 memo_id → 评论数 映射
+    const commentCountMap = new Map<number, number>(commentCountPairs);
+
+    const memos = res.memos.map((m: any) => {
+      const proto = toProtoMemo(m, attsByMemoId.get(m.id) ?? [], relsByMemoId.get(m.id) ?? []);
+      // 注入评论数（本地模式自定义字段，computeCommentAmount 优先读取）
+      const cnt = commentCountMap.get(m.id);
+      if (cnt != null && cnt > 0) (proto as any).commentAmount = cnt;
+      return proto;
+    });
     const nextOffset = offset + memos.length;
     // 语义搜索：候选集一次性返回，无下一页
     const isSemanticSearch = rustReq.vector_embedding !== undefined;
@@ -328,7 +338,14 @@ export const memoServiceClient = {
     // 建立 id→uid 映射，用于 toProtoRelation 生成正确的 proto name
     const idToUid = await buildIdToUidMap([memo], relRes);
     const relations = relRes.map((r: any) => toProtoRelation(r, idToUid));
-    return toProtoMemo(memo, attachments, relations);
+    const proto = toProtoMemo(memo, attachments, relations);
+
+    // 如果是评论，设置 parent 字段（父 memo name）
+    if (memo.parent_id != null) {
+      const parent = await invoke<any | null>("get_memo", { id: memo.parent_id, uid: null });
+      if (parent) proto.parent = `memos/${parent.uid}`;
+    }
+    return proto;
   },
 
   async createMemo(req: any): Promise<any> {
@@ -478,12 +495,101 @@ export const memoServiceClient = {
     await invoke("delete_memo", { id: existing.id });
   },
 
-  async listMemoComments(_req: any): Promise<any> {
-    return { memos: [], nextPageToken: "" };
+  async listMemoComments(req: any): Promise<any> {
+    // req.name = "memos/{uid}"，解析父 memo uid → 查 id → 查评论
+    const parentUid = extractUid(req.name);
+    if (!parentUid) return { memos: [], nextPageToken: "" };
+    const parent = await invoke<any | null>("get_memo", { id: null, uid: parentUid });
+    if (!parent) return { memos: [], nextPageToken: "" };
+
+    // pageSize > 0 时取最新 N 条（降序）；否则取全部（升序，详情页用）
+    const pageSize = req.pageSize || 0;
+    const comments = await invoke<any[]>("list_memo_comments", {
+      parentId: parent.id,
+      limit: pageSize > 0 ? pageSize : null,
+      orderDesc: pageSize > 0,
+    });
+    const commentIds: number[] = comments.map((m: any) => m.id);
+
+    // 批量查询 attachments 和 relations
+    let rawAtts: any[] = [];
+    let rawRels: any[] = [];
+    if (commentIds.length > 0) {
+      const [attRes, relRes] = await Promise.all([
+        invoke<any[]>("list_attachments", { req: { memo_id_list: commentIds } }),
+        invoke<any[]>("list_memo_relations", { req: { memo_id_list: commentIds } }),
+      ]);
+      rawAtts = attRes;
+      rawRels = relRes;
+    }
+
+    const attsByMemoId = new Map<number, any[]>();
+    for (const a of rawAtts) {
+      const mid = a.memo_id as number;
+      if (!attsByMemoId.has(mid)) attsByMemoId.set(mid, []);
+      attsByMemoId.get(mid)!.push(a);
+    }
+
+    const idToUid = await buildIdToUidMap(comments, rawRels);
+    const parentName = `memos/${parentUid}`;
+    const protoComments = comments.map((m: any) => {
+      const proto = toProtoMemo(
+        m,
+        (attsByMemoId.get(m.id) || []).map((a: any) => toProtoAttachment(a)),
+        rawRels.filter((r: any) => r.memo_id === m.id || r.related_memo_id === m.id).map((r: any) => toProtoRelation(r, idToUid)),
+      );
+      proto.parent = parentName;
+      return proto;
+    });
+
+    return { memos: protoComments, nextPageToken: "" };
   },
 
-  async createMemoComment(_req: any): Promise<any> {
-    throw new Error("Comments not supported in local mode");
+  async createMemoComment(req: any): Promise<any> {
+    // req.name = 父 memo name；req.comment = 评论 memo 数据
+    const parentUid = extractUid(req.name);
+    if (!parentUid) throw new Error(`Invalid parent memo name: ${req.name}`);
+    const parent = await invoke<any | null>("get_memo", { id: null, uid: parentUid });
+    if (!parent) throw new Error(`Parent memo not found: ${req.name}`);
+
+    const m = req.comment || {};
+    const uid = m.uid || crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+    const rustReq: any = {
+      uid,
+      content: m.content || "",
+      visibility: protoVisToRust(m.visibility),
+      pinned: false,
+      payload: m.payload || {},
+      parent_id: parent.id,
+    };
+    const created = await invoke<any>("create_memo", { req: rustReq });
+
+    // 关联附件
+    const attachments = m.attachments || [];
+    if (attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.name) {
+          const attUid = extractUid(att.name);
+          const existingAtt = await invoke<any | null>("get_attachment", { id: null, uid: attUid, get_blob: false });
+          if (existingAtt) {
+            await invoke("update_attachment", { req: { id: existingAtt.id, memo_id: created.id } });
+          }
+        }
+      }
+    }
+
+    const [attRes, relRes] = await Promise.all([
+      invoke<any[]>("list_attachments", { req: { memo_id: created.id } }),
+      invoke<any[]>("list_memo_relations", { req: { memo_id_list: [created.id] } }),
+    ]);
+    const idToUid = await buildIdToUidMap([created], relRes);
+    const proto = toProtoMemo(
+      created,
+      attRes.map((a: any) => toProtoAttachment(a)),
+      relRes.map((r: any) => toProtoRelation(r, idToUid)),
+    );
+    proto.parent = req.name;
+    return proto;
   },
 
   async listMemoRelations(_req: any): Promise<any> {
