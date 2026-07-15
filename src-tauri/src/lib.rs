@@ -7,4 +7,5 @@ pub mod embedding;
 pub mod error;
 pub mod file_storage;
 pub mod lan;
+pub mod llm_runner;
 pub mod state;

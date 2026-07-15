@@ -1,6 +1,7 @@
 //! 应用状态：持有 Store 与附件存储根目录
 
 use crate::lan::LanState;
+use crate::llm_runner::LlmRunnerState;
 use memos_core::Store;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -11,6 +12,8 @@ pub struct AppState {
     pub attachments_dir: std::path::PathBuf,
     /// LAN 模块运行时状态，支持在设置页里手动启停
     pub lan: RwLock<Option<Arc<LanState>>>,
+    /// 本地 LLM 启动器运行时状态，支持在设置页里手动启停
+    pub llm: RwLock<Option<Arc<LlmRunnerState>>>,
     /// 全局 shutdown 标志：app 退出时设为 true，后台任务据此提前终止
     pub shutdown: AtomicBool,
     /// 保证退出清理只执行一次，避免重复触发退出流程

@@ -6,6 +6,7 @@ mod embedding;
 mod error;
 mod file_storage;
 pub mod lan;
+mod llm_runner;
 mod protocol;
 mod state;
 mod thumbnail;
@@ -77,7 +78,38 @@ fn cleanup_app_resources(app_handle: &tauri::AppHandle) {
 
     commands::ai_chat::abort_all();
     stop_lan_with_timeout(app_handle);
+    stop_llm_runner(app_handle);
     tracing::info!(pid = current_pid(), "退出清理：完成");
+}
+
+/// 退出时停止本地 LLM 服务（前台模式 kill 子进程；守护模式调用 lms server stop）
+fn stop_llm_runner(app_handle: &tauri::AppHandle) {
+    let state = app_handle.state::<AppState>();
+    let runner = state
+        .llm
+        .read()
+        .expect("LLM RwLock poisoned")
+        .clone();
+    let Some(runner) = runner else {
+        tracing::info!(pid = current_pid(), "退出清理：LLM 启动器未初始化，跳过");
+        return;
+    };
+    if !runner.is_running() {
+        tracing::info!(pid = current_pid(), "退出清理：LLM 启动器未运行，跳过");
+        return;
+    }
+    tracing::info!(pid = current_pid(), "退出清理：停止本地 LLM 服务");
+    let app_clone = app_handle.clone();
+    match tauri::async_runtime::block_on(async {
+        tauri::async_runtime::spawn_blocking(move || {
+            llm_runner::runner::stop_runner(runner, app_clone)
+        })
+        .await
+    }) {
+        Ok(Ok(())) => tracing::info!(pid = current_pid(), "退出清理：LLM 服务已停止"),
+        Ok(Err(e)) => tracing::warn!(pid = current_pid(), "退出清理：LLM 服务停止失败，继续退出: {}", e),
+        Err(e) => tracing::warn!(pid = current_pid(), "退出清理：LLM 服务停止任务 join 失败: {}", e),
+    }
 }
 
 fn spawn_exit_watchdog() {
@@ -147,6 +179,7 @@ fn main() {
                 store: std::sync::Mutex::new(store),
                 attachments_dir,
                 lan: std::sync::RwLock::new(None),
+                llm: std::sync::RwLock::new(None),
                 shutdown: std::sync::atomic::AtomicBool::new(false),
                 cleanup_started: std::sync::atomic::AtomicBool::new(false),
             });
@@ -167,6 +200,31 @@ fn main() {
                     Ok(_) => tracing::info!("LAN 模块启动成功"),
                     Err(e) => tracing::warn!("LAN 模块启动失败（应用其他功能不受影响）: {}", e),
                 }
+            }
+
+            // 根据持久化配置决定是否在启动时拉起本地 LLM 服务
+            let llm_auto_start = {
+                let state = app.state::<AppState>();
+                let store = state.store();
+                llm_runner::load_config(&store).auto_start
+            };
+            if llm_auto_start {
+                let app_handle = app.handle().clone();
+                tracing::info!("setup: 检测到 LLM 启动器配置 auto_start=true，开始启动本地 LLM 服务");
+                tauri::async_runtime::spawn(async move {
+                    let runner = match commands::llm_runner::llm_start(app_handle.clone()).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::warn!("LLM 服务启动失败（应用其他功能不受影响）: {}", e);
+                            return;
+                        }
+                    };
+                    tracing::info!(
+                        pid = current_pid(),
+                        running = runner.running,
+                        "LLM 服务启动流程结束"
+                    );
+                });
             }
 
             tracing::info!(pid = current_pid(), "setup: end");
@@ -247,9 +305,14 @@ fn main() {
             commands::review::review_check_new_memos,
             // import/export
             commands::import_export::export_memos_json,
-            commands::import_export::export_memos_markdown,
             commands::import_export::import_memos_json,
-            commands::import_export::import_memos_markdown,
+            // local llm runner
+            commands::llm_runner::llm_get_config,
+            commands::llm_runner::llm_update_config,
+            commands::llm_runner::llm_start,
+            commands::llm_runner::llm_stop,
+            commands::llm_runner::llm_get_status,
+            commands::llm_runner::llm_test_connection,
         ])
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用时出错")

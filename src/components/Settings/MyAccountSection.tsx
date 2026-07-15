@@ -25,7 +25,6 @@ const MyAccountSection = () => {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const mdInputRef = useRef<HTMLInputElement>(null);
 
   // 获取当前用户的 memo 创建时间戳统计，用于热力图
   const { data: userStats, isLoading: isLoadingStats } = useUserStats(user?.name);
@@ -47,22 +46,8 @@ const MyAccountSection = () => {
     }
   };
 
-  const handleExportMarkdown = async () => {
-    setExporting(true);
-    try {
-      const text = await invoke<string>("export_memos_markdown");
-      downloadText(`${filePrefix()}.md`, text, "text/markdown");
-      toast.success(t("setting.account.export-memos"));
-    } catch (e) {
-      toast.error(t("setting.account.export-failed"));
-      console.error(e);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // 通用导入处理：读取文件文本后调用对应 IPC 命令
-  const handleImport = async (file: File, command: "import_memos_json" | "import_memos_markdown") => {
+  // 读取文件文本后调用 IPC 命令导入
+  const handleImport = async (file: File) => {
     setImporting(true);
     try {
       const text = await file.text();
@@ -70,10 +55,7 @@ const MyAccountSection = () => {
         toast.error(t("setting.account.import-empty"));
         return;
       }
-      const count = await invoke<number>(command, {
-        jsonStr: text,
-        markdownStr: text,
-      });
+      const count = await invoke<number>("import_memos_json", { jsonStr: text });
       toast.success(t("setting.account.import-success", { count }));
     } catch (e) {
       toast.error(t("setting.account.import-failed"));
@@ -85,14 +67,8 @@ const MyAccountSection = () => {
 
   const onJsonInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) void handleImport(file, "import_memos_json");
+    if (file) void handleImport(file);
     // 重置 value 允许重复选择同一文件
-    e.target.value = "";
-  };
-
-  const onMdInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleImport(file, "import_memos_markdown");
     e.target.value = "";
   };
 
@@ -192,10 +168,6 @@ const MyAccountSection = () => {
             <DownloadIcon className="w-4 h-4 mr-1.5" />
             {t("setting.account.export-json")}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportMarkdown} disabled={exporting || importing}>
-            <DownloadIcon className="w-4 h-4 mr-1.5" />
-            {t("setting.account.export-markdown")}
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -205,15 +177,6 @@ const MyAccountSection = () => {
             <UploadIcon className="w-4 h-4 mr-1.5" />
             {t("setting.account.import-json")}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => mdInputRef.current?.click()}
-            disabled={exporting || importing}
-          >
-            <UploadIcon className="w-4 h-4 mr-1.5" />
-            {t("setting.account.import-markdown")}
-          </Button>
         </div>
         {/* 隐藏的文件输入：JSON 导入 */}
         <input
@@ -222,14 +185,6 @@ const MyAccountSection = () => {
           accept="application/json,.json"
           className="hidden"
           onChange={onJsonInputChange}
-        />
-        {/* 隐藏的文件输入：Markdown 导入 */}
-        <input
-          ref={mdInputRef}
-          type="file"
-          accept="text/markdown,.md,text/plain"
-          className="hidden"
-          onChange={onMdInputChange}
         />
       </SettingGroup>
 

@@ -24,6 +24,8 @@ pub enum IpcError {
     Lan(String),
     /// 回顾模块错误
     Review(String),
+    /// 本地 LLM 启动器错误
+    Llm(String),
 }
 
 impl fmt::Display for IpcError {
@@ -37,6 +39,7 @@ impl fmt::Display for IpcError {
             IpcError::BadRequest(msg) => write!(f, "BadRequest: {msg}"),
             IpcError::Lan(msg) => write!(f, "Lan: {msg}"),
             IpcError::Review(msg) => write!(f, "Review: {msg}"),
+            IpcError::Llm(msg) => write!(f, "Llm: {msg}"),
         }
     }
 }
@@ -71,6 +74,12 @@ impl From<serde_json::Error> for IpcError {
 impl From<crate::lan::LanError> for IpcError {
     fn from(e: crate::lan::LanError) -> Self {
         IpcError::Lan(e.to_string())
+    }
+}
+
+impl From<crate::llm_runner::LlmRunnerError> for IpcError {
+    fn from(e: crate::llm_runner::LlmRunnerError) -> Self {
+        IpcError::Llm(e.to_string())
     }
 }
 
