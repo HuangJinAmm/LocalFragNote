@@ -212,6 +212,16 @@ function parseFilter(filter: string): Record<string, unknown> {
     r.visibility_list = (vm[1].match(/"([^"]+)"/g) || []).map((s) => s.slice(1, -1));
   }
 
+  // pinned — 仅查置顶 memo
+  if (/\bpinned\b/.test(filter) && !filter.includes("order_by_pinned")) {
+    r.pinned_only = true;
+  }
+
+  // has_link / has_task_list / has_code — 属性过滤
+  if (/\bhas_link\b/.test(filter)) r.has_link = true;
+  if (/\bhas_task_list\b/.test(filter)) r.has_task_list = true;
+  if (/\bhas_code\b/.test(filter)) r.has_code = true;
+
   return r;
 }
 

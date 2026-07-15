@@ -8,6 +8,7 @@ export type FilterFactor =
   | "contentSearch"
   | "semanticSearch"
   | "displayTime"
+  | "fromDate"
   | "pinned"
   | "property.hasLink"
   | "property.hasTaskList"

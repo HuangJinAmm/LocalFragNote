@@ -2,6 +2,7 @@ import { BotIcon, SettingsIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/utils/i18n";
 import { cn } from "@/lib/utils";
+import { registerAiChat } from "./aiChatController";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatMessages } from "./AiChatMessages";
 import { AiChatProviderPicker } from "./AiChatProviderPicker";
@@ -53,6 +54,18 @@ export function AiChatPanel() {
   const [providerId, setProviderId] = useState<string | null>(null);
   const [position, setPosition] = useState<Position>(() => loadPosition());
   const { messages, isStreaming, send, abort } = useAiChat({ providerId });
+
+  // 保持 send 的最新引用，供模块级控制器调用
+  const sendRef = useRef(send);
+  sendRef.current = send;
+
+  // 注册到模块级控制器，允许外部组件(如 MemoActionMenu)打开面板并发送预设消息
+  useEffect(() => {
+    return registerAiChat(
+      () => setOpen(true),
+      (content) => sendRef.current(content),
+    );
+  }, []);
 
   // 拖拽状态
   const dragState = useRef<{

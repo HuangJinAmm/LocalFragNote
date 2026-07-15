@@ -43,6 +43,10 @@ const FILTER_CONFIGS: Record<FilterFactor, FilterConfig> = {
     icon: CalendarIcon,
     getLabel: (value) => value,
   },
+  fromDate: {
+    icon: CalendarIcon,
+    getLabel: (value, t) => t("memo.filters.from-date", { date: value }),
+  },
   pinned: {
     icon: BookmarkIcon,
     getLabel: (value) => value,

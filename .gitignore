@@ -8,3 +8,6 @@ dist/
 # Tauri
 src-tauri/gen/
 src-tauri/lib/
+Cargo.lock
+package-lock.json
+yarn.lock

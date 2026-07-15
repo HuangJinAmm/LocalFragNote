@@ -214,3 +214,58 @@ export function useCheckNewMemos(deckId: number) {
 
   return { newCount, refresh };
 }
+
+/** 全局到期卡片总数（跨所有 deck），自动定时刷新 */
+export function useTotalDueCount() {
+  const [dueCount, setDueCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const count = await invoke<number>("review_total_due_count");
+      setDueCount(count);
+    } catch {
+      setDueCount(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    // 每 5 分钟刷新一次
+    const interval = setInterval(refresh, 5 * 60 * 1000);
+    // 窗口重新获得焦点时刷新
+    const handleFocus = () => refresh();
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [refresh]);
+
+  return { dueCount, loading, refresh };
+}
+
+/** 所有复习记录的时间戳（用于热力图） */
+export function useReviewTimestamps() {
+  const [timestamps, setTimestamps] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const result = await invoke<number[]>("review_list_review_timestamps");
+      setTimestamps(result);
+    } catch {
+      setTimestamps([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { timestamps, loading, refresh };
+}

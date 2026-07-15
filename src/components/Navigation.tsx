@@ -1,9 +1,12 @@
 import { BookOpenIcon, CompassIcon, LibraryIcon, PaperclipIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
 import { useTranslate } from "@/utils/i18n";
+import { useTotalDueCount } from "@/components/Review/hooks";
 import MemosLogo from "./MemosLogo";
 import UserMenu from "./UserMenu";
 
@@ -12,6 +15,7 @@ interface NavLinkItem {
   path: string;
   title: string;
   icon: React.ReactNode;
+  badge?: number;
 }
 
 interface Props {
@@ -22,6 +26,28 @@ interface Props {
 const Navigation = (props: Props) => {
   const { collapsed, className } = props;
   const t = useTranslate();
+  const { dueCount } = useTotalDueCount();
+  const notifiedRef = useRef(false);
+
+  // 应用启动后若有到期卡片，发送一次系统通知
+  useEffect(() => {
+    if (notifiedRef.current || dueCount === 0) return;
+    notifiedRef.current = true;
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(t("review.due-reminder-title"), {
+        body: t("review.due-reminder-body", { count: dueCount }),
+      });
+    } else if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().then((perm) => {
+        if (perm === "granted") {
+          new Notification(t("review.due-reminder-title"), {
+            body: t("review.due-reminder-body", { count: dueCount }),
+          });
+        }
+      });
+    }
+  }, [dueCount, t]);
 
   const homeNavLink: NavLinkItem = {
     id: "header-memos",
@@ -47,6 +73,7 @@ const Navigation = (props: Props) => {
     path: Routes.REVIEW,
     title: t("review.nav-title"),
     icon: <BookOpenIcon className="w-6 h-auto shrink-0" />,
+    badge: dueCount > 0 ? dueCount : undefined,
   };
 
   // 本地单用户应用：主导航包含 home、attachments、discover 和 review
@@ -79,14 +106,36 @@ const Navigation = (props: Props) => {
               {props.collapsed ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>{navLink.icon}</div>
+                    <div className="relative">
+                      {navLink.icon}
+                      {navLink.badge !== undefined && (
+                        <Badge
+                          variant="warning"
+                          shape="pill"
+                          className="absolute -top-2 -right-2 min-w-4 h-4 px-1 text-[10px] justify-center"
+                        >
+                          {navLink.badge > 99 ? "99+" : navLink.badge}
+                        </Badge>
+                      )}
+                    </div>
                   </TooltipTrigger>
                   <TooltipContent side="right">
                     <p>{navLink.title}</p>
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                navLink.icon
+                <div className="relative">
+                  {navLink.icon}
+                  {navLink.badge !== undefined && (
+                    <Badge
+                      variant="warning"
+                      shape="pill"
+                      className="absolute -top-2 -right-2 min-w-4 h-4 px-1 text-[10px] justify-center"
+                    >
+                      {navLink.badge > 99 ? "99+" : navLink.badge}
+                    </Badge>
+                  )}
+                </div>
               )}
               {!props.collapsed && <span className="ml-3 truncate">{navLink.title}</span>}
             </NavLink>

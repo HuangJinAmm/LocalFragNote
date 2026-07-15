@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
+import { SearchHighlightProvider } from "./components/MemoContent/SearchHighlightContext";
 import { useInstance } from "./contexts/InstanceContext";
 import { MemoFilterProvider } from "./contexts/MemoFilterContext";
 import { useUserLocale } from "./hooks/useUserLocale";
@@ -44,7 +45,9 @@ const App = () => {
 
   return (
     <MemoFilterProvider>
-      <Outlet />
+      <SearchHighlightProvider>
+        <Outlet />
+      </SearchHighlightProvider>
     </MemoFilterProvider>
   );
 };

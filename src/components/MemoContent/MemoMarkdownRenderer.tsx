@@ -10,6 +10,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { isMentionElement, isTagElement, isTaskListItemElement } from "@/types/markdown";
 import { rehypeHeadingId } from "@/utils/rehype-plugins/rehype-heading-id";
+import { rehypeHighlightSearch } from "@/utils/rehype-plugins/rehype-highlight-search";
 import { remarkDisableSetext } from "@/utils/remark-plugins/remark-disable-setext";
 import { remarkMention } from "@/utils/remark-plugins/remark-mention";
 import { remarkPreserveType } from "@/utils/remark-plugins/remark-preserve-type";
@@ -20,6 +21,7 @@ import { SANITIZE_SCHEMA } from "./constants";
 import { MarkdownRenderContext, rootMarkdownRenderContext } from "./MarkdownRenderContext";
 import { Mention } from "./Mention";
 import { AnchorLink, Blockquote, Heading, HorizontalRule, Image, InlineCode, Link, List, ListItem, Paragraph } from "./markdown";
+import { useSearchHighlightTerms } from "./SearchHighlightContext";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "./Table";
 import { Tag } from "./Tag";
 import { TaskListItem } from "./TaskListItem";
@@ -54,6 +56,7 @@ function getMentionUsername(node: Element, children?: React.ReactNode): string {
 }
 
 export const MemoMarkdownRenderer = ({ content, resolvedMentionUsernames, memoName, compact }: MemoMarkdownRendererProps) => {
+  const highlightTerms = useSearchHighlightTerms();
   const markdownComponents: Components = {
     input: ({ node, ...inputProps }) => {
       if (node && isTaskListItemElement(node)) {
@@ -157,6 +160,8 @@ export const MemoMarkdownRenderer = ({ content, resolvedMentionUsernames, memoNa
           [rehypeSanitize, SANITIZE_SCHEMA],
           rehypeHeadingId,
           [rehypeKatex, { throwOnError: false, strict: false }],
+          // 搜索关键词高亮：放在最后，避免与其他插件冲突
+          [rehypeHighlightSearch, highlightTerms],
         ]}
         components={markdownComponents}
       >

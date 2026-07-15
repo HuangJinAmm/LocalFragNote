@@ -117,6 +117,19 @@ pub fn review_deck_stats(
 }
 
 #[tauri::command]
+pub fn review_total_due_count(state: tauri::State<'_, AppState>) -> IpcResult<i32> {
+    let store = state.store();
+    Ok(store.with_conn(|c| review::total_due_count(c))?)
+}
+
+/// 所有复习记录的时间戳（用于热力图）
+#[tauri::command]
+pub fn review_list_review_timestamps(state: tauri::State<'_, AppState>) -> IpcResult<Vec<i64>> {
+    let store = state.store();
+    Ok(store.with_conn(|c| review::list_review_timestamps(c))?)
+}
+
+#[tauri::command]
 pub fn review_check_new_memos(
     state: tauri::State<'_, AppState>,
     deck_id: i32,

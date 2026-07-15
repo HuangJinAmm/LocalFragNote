@@ -69,6 +69,7 @@ export const SANITIZE_SCHEMA = {
     input: INPUT_ATTRIBUTES,
     code: [...(defaultSchema.attributes?.code || []), ["className", ...KATEX_INLINE_CLASS_NAMES, ...KATEX_BLOCK_CLASS_NAMES]],
     span: [...(defaultSchema.attributes?.span || []), ["className", ...SPAN_CLASS_NAMES], ["aria*"], ["data*"]],
+    mark: [["className", "search-highlight"]],
     iframe: [
       ["src", ...TRUSTED_IFRAME_SRC_PATTERNS],
       "width",
@@ -81,7 +82,7 @@ export const SANITIZE_SCHEMA = {
       "loading",
     ],
   },
-  tagNames: [...(defaultSchema.tagNames || []), "iframe"],
+  tagNames: [...(defaultSchema.tagNames || []), "iframe", "mark"],
   protocols: {
     ...defaultSchema.protocols,
     src: ["https"],

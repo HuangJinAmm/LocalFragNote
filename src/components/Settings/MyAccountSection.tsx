@@ -1,13 +1,16 @@
 import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import HeatMap from "@uiw/react-heat-map";
-import { ChevronLeftIcon, ChevronRightIcon, PenLineIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, PenLineIcon, UploadIcon } from "lucide-react";
 import dayjs from "dayjs";
-import { useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "react-hot-toast";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { useDialog } from "@/hooks/useDialog";
 import { useUserStats } from "@/hooks/useUserQueries";
 import { useTranslate } from "@/utils/i18n";
+import { downloadText } from "@/helpers/utils";
 import UpdateAccountDialog from "../UpdateAccountDialog";
 import UserAvatar from "../UserAvatar";
 import SettingGroup from "./SettingGroup";
@@ -19,9 +22,79 @@ const MyAccountSection = () => {
   const user = useCurrentUser();
   const accountDialog = useDialog();
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+  const mdInputRef = useRef<HTMLInputElement>(null);
 
   // 获取当前用户的 memo 创建时间戳统计，用于热力图
   const { data: userStats, isLoading: isLoadingStats } = useUserStats(user?.name);
+
+  // 生成带时间戳的文件名前缀
+  const filePrefix = () => `memos-backup-${dayjs().format("YYYYMMDD-HHmmss")}`;
+
+  const handleExportJson = async () => {
+    setExporting(true);
+    try {
+      const text = await invoke<string>("export_memos_json");
+      downloadText(`${filePrefix()}.json`, text, "application/json");
+      toast.success(t("setting.account.export-memos"));
+    } catch (e) {
+      toast.error(t("setting.account.export-failed"));
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportMarkdown = async () => {
+    setExporting(true);
+    try {
+      const text = await invoke<string>("export_memos_markdown");
+      downloadText(`${filePrefix()}.md`, text, "text/markdown");
+      toast.success(t("setting.account.export-memos"));
+    } catch (e) {
+      toast.error(t("setting.account.export-failed"));
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 通用导入处理：读取文件文本后调用对应 IPC 命令
+  const handleImport = async (file: File, command: "import_memos_json" | "import_memos_markdown") => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        toast.error(t("setting.account.import-empty"));
+        return;
+      }
+      const count = await invoke<number>(command, {
+        jsonStr: text,
+        markdownStr: text,
+      });
+      toast.success(t("setting.account.import-success", { count }));
+    } catch (e) {
+      toast.error(t("setting.account.import-failed"));
+      console.error(e);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onJsonInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleImport(file, "import_memos_json");
+    // 重置 value 允许重复选择同一文件
+    e.target.value = "";
+  };
+
+  const onMdInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleImport(file, "import_memos_markdown");
+    e.target.value = "";
+  };
 
   // 将 proto Timestamp 数组转换为 react-heat-map 所需的 value 数组
   // value: { date: "YYYY/MM/DD", count: number }[]
@@ -111,6 +184,53 @@ const MyAccountSection = () => {
             />
           </div>
         )}
+      </SettingGroup>
+
+      <SettingGroup title={t("setting.account.backup-title")} description={t("setting.account.backup-description")}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportJson} disabled={exporting || importing}>
+            <DownloadIcon className="w-4 h-4 mr-1.5" />
+            {t("setting.account.export-json")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportMarkdown} disabled={exporting || importing}>
+            <DownloadIcon className="w-4 h-4 mr-1.5" />
+            {t("setting.account.export-markdown")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => jsonInputRef.current?.click()}
+            disabled={exporting || importing}
+          >
+            <UploadIcon className="w-4 h-4 mr-1.5" />
+            {t("setting.account.import-json")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => mdInputRef.current?.click()}
+            disabled={exporting || importing}
+          >
+            <UploadIcon className="w-4 h-4 mr-1.5" />
+            {t("setting.account.import-markdown")}
+          </Button>
+        </div>
+        {/* 隐藏的文件输入：JSON 导入 */}
+        <input
+          ref={jsonInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={onJsonInputChange}
+        />
+        {/* 隐藏的文件输入：Markdown 导入 */}
+        <input
+          ref={mdInputRef}
+          type="file"
+          accept="text/markdown,.md,text/plain"
+          className="hidden"
+          onChange={onMdInputChange}
+        />
       </SettingGroup>
 
       <UpdateAccountDialog open={accountDialog.isOpen} onOpenChange={accountDialog.setOpen} />

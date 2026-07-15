@@ -348,6 +348,7 @@
       "has-code": "hasCode",
       "has-link": "hasLink",
       "has-task-list": "hasTaskList",
+      "from-date": "From {{date}}",
       "label": "Filters"
     },
     "compact-mode": "Compact mode",
@@ -369,7 +370,7 @@
     "order": "Order",
     "order-by": "Order By",
     "outline": "Outline",
-    "search-placeholder": "Search memos...",
+    "search-placeholder": "Search memos (supports tag: from: has: is:)",
     "search-placeholder-semantic": "Search by meaning...",
     "search-mode-tooltip": "Toggle search mode",
     "search-mode-keyword": "Keyword search",
@@ -417,6 +418,17 @@
       "title": "Tasks",
       "uncheck-all": "Uncheck all tasks",
       "updated": "Tasks updated"
+    },
+    "ai-actions": {
+      "title": "AI",
+      "summarize": "Summarize",
+      "summarize-prompt": "Please summarize the following memo content concisely:",
+      "translate": "Translate",
+      "translate-prompt": "Please translate the following memo content into English (if already in English, translate into Chinese):",
+      "polish": "Polish",
+      "polish-prompt": "Please polish the following memo content to improve clarity and readability while preserving the original meaning. Output the polished text only:",
+      "generate-cards": "Generate Review Cards",
+      "cards-prompt": "Based on the following memo content, generate review cards (Q&A) and persist them by calling the create_review_cards tool with memoUid set to {{uid}}. Then briefly describe what cards you created."
     },
     "view-detail": "View Detail",
     "visibility": {
@@ -524,13 +536,23 @@
     },
     "account": {
       "activity-description": "Daily memo creation activity for the selected year.",
+      "backup-description": "Export all memos to a Markdown or JSON file, or import from a previously exported file. Existing memos with the same uid are skipped.",
+      "backup-title": "Backup & Restore",
       "change-password": "Change password",
       "danger-area": "Danger area",
       "danger-area-description": "Irreversible account actions live here. Review them carefully before continuing.",
       "delete-account": "Delete account",
       "delete-account-description": "Permanently remove this account and all associated access from this instance. This action cannot be undone.",
       "email-note": "Optional",
+      "export-failed": "Export failed",
+      "export-json": "Export JSON",
+      "export-markdown": "Export Markdown",
       "export-memos": "Export Memos",
+      "import-empty": "File is empty or invalid",
+      "import-failed": "Import failed",
+      "import-json": "Import JSON",
+      "import-markdown": "Import Markdown",
+      "import-success": "Imported {{count}} memos",
       "nickname-note": "Displayed in the banner",
       "openapi-reset": "Reset OpenAPI Key",
       "openapi-sample-post": "Hello #memos from {{url}}",
@@ -1003,6 +1025,10 @@
     "daily-new-card-limit-desc": "Max new cards to learn per day (0=unlimited)",
     "default-cards-per-memo": "Default Cards per Memo",
     "default-cards-per-memo-desc": "Default card generation limit per memo",
-    "use-default": "Use Default"
+    "use-default": "Use Default",
+    "heatmap-title": "Review Activity",
+    "heatmap-description": "Daily review counts for the selected year",
+    "due-reminder-title": "Review cards due",
+    "due-reminder-body": "You have {{count}} cards waiting for review."
   }
 }

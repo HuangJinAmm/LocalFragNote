@@ -37,3 +37,11 @@ export const downloadFileFromUrl = (url: string, filename: string) => {
   a.click();
   a.remove();
 };
+
+/// 把文本打包成 Blob 并触发浏览器下载
+export const downloadText = (filename: string, text: string, mime = "application/json") => {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  downloadFileFromUrl(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};

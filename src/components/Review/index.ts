@@ -5,5 +5,6 @@ export { default as DeckStats } from "./DeckStats";
 export { default as CardReview } from "./CardReview";
 export { default as CardTable } from "./CardTable";
 export { default as GenerationProgress } from "./GenerationProgress";
+export { default as ReviewHeatmap } from "./ReviewHeatmap";
 export * from "./types";
 export * from "./hooks";

@@ -15,7 +15,8 @@ mod thumbnail;
 fn setup_ort_dylib_path() {
     if let Some(path) = option_env!("ORT_DYLIB_PATH") {
         if !path.is_empty() {
-            std::env::set_var("ORT_DYLIB_PATH", path);
+            // Rust 2024 edition 中 set_var 标记为 unsafe（多线程环境下可能引发 UB）
+            unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
         }
     }
 }
@@ -241,7 +242,14 @@ fn main() {
             commands::review::review_generate_cards,
             commands::review::review_regenerate_card,
             commands::review::review_deck_stats,
+            commands::review::review_total_due_count,
+            commands::review::review_list_review_timestamps,
             commands::review::review_check_new_memos,
+            // import/export
+            commands::import_export::export_memos_json,
+            commands::import_export::export_memos_markdown,
+            commands::import_export::import_memos_json,
+            commands::import_export::import_memos_markdown,
         ])
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用时出错")

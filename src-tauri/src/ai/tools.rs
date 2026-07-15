@@ -1,8 +1,10 @@
 //! AI agent 工具：定义 OpenAI function-calling schema + 执行分发
 
 use memos_core::markdown;
-use memos_core::memo::{CreateMemo, FindMemo};
-use memos_core::types::{RowStatus, Visibility};
+use memos_core::memo::{CreateMemo, FindMemo, UpdateMemo};
+use memos_core::memo_relation::{UpsertMemoRelation};
+use memos_core::review::{self, ReviewCard};
+use memos_core::types::{MemoRelationType, RowStatus, Visibility};
 use memos_core::Store;
 use serde_json::{json, Value};
 
@@ -74,6 +76,83 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "update_memo",
+                "description": "更新一条笔记的内容或置顶状态。只需提供要修改的字段。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "uid": { "type": "string", "description": "笔记唯一 ID" },
+                        "content": { "type": "string", "description": "新的笔记内容（Markdown），不传则不改内容" },
+                        "pinned": { "type": "boolean", "description": "是否置顶，不传则不改" }
+                    },
+                    "required": ["uid"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "search_semantic",
+                "description": "语义搜索笔记：基于向量相似度查找与查询含义最相近的笔记。适合查找\"关于某主题的想法\"这类模糊查询。首次调用会下载嵌入模型（约90MB），可能耗时数十秒。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "自然语言查询，如\"Rust 内存管理\"或\"如何做时间管理\"" },
+                        "limit": { "type": "number", "description": "返回数量，默认 10，最大 50" }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "link_memos",
+                "description": "在两条笔记之间建立关联关系（引用或评论）。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "from_uid": { "type": "string", "description": "源笔记 uid" },
+                        "to_uid": { "type": "string", "description": "目标笔记 uid" },
+                        "relation_type": { "type": "string", "enum": ["REFERENCE", "COMMENT"], "description": "关系类型：REFERENCE=引用，COMMENT=评论" }
+                    },
+                    "required": ["from_uid", "to_uid", "relation_type"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "create_review_cards",
+                "description": "为指定 deck 批量创建复习卡片。卡片内容由你（AI）根据笔记内容生成后传入。每张卡需指定 memo_uid、card_type、front、back、angle。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "deck_id": { "type": "number", "description": "目标 deck ID" },
+                        "cards": {
+                            "type": "array",
+                            "description": "卡片数组",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "memo_uid": { "type": "string", "description": "来源笔记 uid" },
+                                    "card_type": { "type": "string", "enum": ["basic", "reversed", "cloze", "concept", "compare"], "description": "卡片类型" },
+                                    "front": { "type": "string", "description": "正面内容（Markdown）" },
+                                    "back": { "type": "string", "description": "背面内容（Markdown）" },
+                                    "cloze_answer": { "type": "string", "description": "填空答案（仅 cloze 类型需要）" },
+                                    "angle": { "type": "string", "description": "考核点，如：定义|应用|对比|列举|原理" }
+                                },
+                                "required": ["memo_uid", "card_type", "front", "back"]
+                            }
+                        }
+                    },
+                    "required": ["deck_id", "cards"]
+                }
+            }
+        }),
     ]
 }
 
@@ -85,6 +164,10 @@ pub fn execute_tool(name: &str, args: &Value, store: &Store) -> memos_core::Core
         "create_memo" => execute_create_memo(args, store),
         "list_tags" => execute_list_tags(store),
         "list_memos_by_tag" => execute_list_memos_by_tag(args, store),
+        "update_memo" => execute_update_memo(args, store),
+        "search_semantic" => execute_search_semantic(args, store),
+        "link_memos" => execute_link_memos(args, store),
+        "create_review_cards" => execute_create_review_cards(args, store),
         _ => Err(memos_core::CoreError::Other(format!("未知工具: {name}"))),
     }
 }
@@ -244,6 +327,212 @@ fn execute_list_memos_by_tag(args: &Value, store: &Store) -> memos_core::CoreRes
     Ok(json!({ "memos": result }))
 }
 
+fn execute_update_memo(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+    let uid = args
+        .get("uid")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 uid 参数".to_string()))?;
+
+    // uid → id
+    let memo = store
+        .with_conn(|c| memos_core::memo::get(c, &FindMemo { uid: Some(uid.to_string()), ..Default::default() }))?
+        .ok_or_else(|| memos_core::CoreError::NotFound(format!("memo uid={uid}")))?;
+
+    let content = args.get("content").and_then(|v| v.as_str()).map(String::from);
+    let pinned = args.get("pinned").and_then(|v| v.as_bool());
+
+    let update = UpdateMemo {
+        id: memo.id,
+        content: content.clone(),
+        pinned,
+        ..Default::default()
+    };
+    let updated = store.with_conn(|c| memos_core::memo::update(c, &update))?;
+
+    // 内容变更时同步 embedding（同步阻塞，在 spawn_blocking 上下文中可接受）
+    if content.is_some() && updated.parent_id.is_none() {
+        if let Err(e) = crate::commands::memo::sync_memo_embedding_for_memo(store, &updated) {
+            tracing::warn!("AI 工具更新 memo {} 后同步 embedding 失败: {}", updated.id, e);
+        }
+    }
+
+    Ok(json!({
+        "uid": updated.uid,
+        "id": updated.id,
+        "updated_ts": updated.updated_ts,
+        "content": updated.content,
+        "pinned": updated.pinned,
+    }))
+}
+
+fn execute_search_semantic(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 query 参数".to_string()))?;
+
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .map(|n| n as u32)
+        .unwrap_or(10)
+        .min(50)
+        .max(1);
+
+    // 生成查询向量（阻塞调用，在 spawn_blocking 上下文中可接受）
+    let embedding_json = crate::embedding::embed_to_json(query)
+        .map_err(|e| memos_core::CoreError::Other(format!("生成 embedding 失败: {e}")))?;
+
+    let find = FindMemo {
+        vector_embedding: Some(embedding_json),
+        vector_top_k: Some(limit),
+        row_status: Some(RowStatus::Normal),
+        ..Default::default()
+    };
+
+    let memos = store.with_conn(|c| memos_core::memo::list(c, &find))?;
+    let result: Vec<Value> = memos
+        .iter()
+        .map(|m| {
+            json!({
+                "uid": m.uid,
+                "snippet": markdown::generate_snippet(&m.content, 200),
+                "tags": markdown::extract_tags(&m.content),
+                "created_ts": m.created_ts,
+                "updated_ts": m.updated_ts,
+            })
+        })
+        .collect();
+    Ok(json!({ "memos": result, "query": query }))
+}
+
+fn execute_link_memos(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+    let from_uid = args
+        .get("from_uid")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 from_uid 参数".to_string()))?;
+    let to_uid = args
+        .get("to_uid")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 to_uid 参数".to_string()))?;
+    let relation_type_str = args
+        .get("relation_type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 relation_type 参数".to_string()))?;
+
+    let relation_type = match relation_type_str {
+        "REFERENCE" => MemoRelationType::Reference,
+        "COMMENT" => MemoRelationType::Comment,
+        other => return Err(memos_core::CoreError::Other(format!("未知关系类型: {other}"))),
+    };
+
+    // 解析两个 uid → id
+    let from_memo = store
+        .with_conn(|c| memos_core::memo::get(c, &FindMemo { uid: Some(from_uid.to_string()), ..Default::default() }))?
+        .ok_or_else(|| memos_core::CoreError::NotFound(format!("memo uid={from_uid}")))?;
+    let to_memo = store
+        .with_conn(|c| memos_core::memo::get(c, &FindMemo { uid: Some(to_uid.to_string()), ..Default::default() }))?
+        .ok_or_else(|| memos_core::CoreError::NotFound(format!("memo uid={to_uid}")))?;
+
+    store.with_conn(|c| {
+        memos_core::memo_relation::upsert(c, &UpsertMemoRelation {
+            memo_id: from_memo.id,
+            related_memo_id: to_memo.id,
+            r#type: relation_type,
+        })
+    })?;
+
+    Ok(json!({
+        "from_uid": from_uid,
+        "to_uid": to_uid,
+        "relation_type": relation_type_str,
+    }))
+}
+
+fn execute_create_review_cards(args: &Value, store: &Store) -> memos_core::CoreResult<Value> {
+    let deck_id = args
+        .get("deck_id")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 deck_id 参数".to_string()))?
+        as i32;
+
+    let cards_arr = args
+        .get("cards")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| memos_core::CoreError::Other("缺少 cards 参数".to_string()))?;
+
+    if cards_arr.is_empty() {
+        return Ok(json!({ "inserted": 0, "deck_id": deck_id }));
+    }
+
+    // 验证 deck 存在
+    let deck = store
+        .with_conn(|c| review::get_deck(c, deck_id))?
+        .ok_or_else(|| memos_core::CoreError::NotFound(format!("deck id={deck_id}")))?;
+
+    let now = chrono::Utc::now().timestamp();
+    let mut inserted = 0u32;
+    let mut errors: Vec<String> = Vec::new();
+
+    for card in cards_arr {
+        let memo_uid = card
+            .get("memo_uid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let card_type = card
+            .get("card_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("basic");
+        let front = card
+            .get("front")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let back = card
+            .get("back")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let cloze_answer = card.get("cloze_answer").and_then(|v| v.as_str()).map(String::from);
+        let angle = card.get("angle").and_then(|v| v.as_str()).unwrap_or("");
+
+        if memo_uid.is_empty() || front.is_empty() {
+            errors.push(format!("跳过无效卡片：memo_uid 或 front 为空"));
+            continue;
+        }
+
+        let review_card = ReviewCard {
+            id: 0,
+            deck_id,
+            memo_uid: memo_uid.to_string(),
+            card_type: card_type.to_string(),
+            front: front.to_string(),
+            back: back.to_string(),
+            cloze_answer,
+            angle: angle.to_string(),
+            stability: 0.0,
+            difficulty: 0.0,
+            due: now,
+            last_review: None,
+            reps: 0,
+            lapses: 0,
+            state: 0,
+            created_ts: now,
+            memo_deleted: false,
+        };
+
+        match store.with_conn(|c| review::create_card(c, &review_card)) {
+            Ok(_) => inserted += 1,
+            Err(e) => errors.push(format!("card memo_uid={memo_uid}: {e}")),
+        }
+    }
+
+    Ok(json!({
+        "inserted": inserted,
+        "deck_id": deck.id,
+        "deck_name": deck.name,
+        "errors": errors,
+    }))
+}
+
 /// 生成 16 字符 hex ID
 fn uuid_like() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -270,6 +559,7 @@ mod tests {
                 pinned: false,
                 payload: serde_json::Value::Object(Default::default()),
                 location: None,
+                parent_id: None,
             };
             store
                 .with_conn(|c| memos_core::memo::create(c, &create))
@@ -281,7 +571,7 @@ mod tests {
     #[test]
     fn test_tool_definitions_count() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 5);
+        assert_eq!(defs.len(), 9);
         let names: Vec<&str> = defs
             .iter()
             .map(|d| d["function"]["name"].as_str().unwrap())
@@ -291,6 +581,10 @@ mod tests {
         assert!(names.contains(&"create_memo"));
         assert!(names.contains(&"list_tags"));
         assert!(names.contains(&"list_memos_by_tag"));
+        assert!(names.contains(&"update_memo"));
+        assert!(names.contains(&"search_semantic"));
+        assert!(names.contains(&"link_memos"));
+        assert!(names.contains(&"create_review_cards"));
     }
 
     #[test]
@@ -357,6 +651,144 @@ mod tests {
     fn test_execute_tool_unknown() {
         let store = Store::open(":memory:").unwrap();
         let result = execute_tool("unknown_tool", &json!({}), &store);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_update_memo_content() {
+        let store = setup_store_with_memos();
+        let result = execute_update_memo(
+            &json!({"uid": "uid0", "content": "#rust 更新后的内容"}),
+            &store,
+        )
+        .unwrap();
+        assert_eq!(result["uid"].as_str().unwrap(), "uid0");
+        assert!(result["content"].as_str().unwrap().contains("更新后"));
+    }
+
+    #[test]
+    fn test_update_memo_pinned() {
+        let store = setup_store_with_memos();
+        let result = execute_update_memo(&json!({"uid": "uid1", "pinned": true}), &store).unwrap();
+        assert_eq!(result["pinned"].as_bool().unwrap(), true);
+    }
+
+    #[test]
+    fn test_update_memo_not_found() {
+        let store = setup_store_with_memos();
+        let result = execute_update_memo(&json!({"uid": "nope"}), &store);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_update_memo_missing_uid() {
+        let store = setup_store_with_memos();
+        let result = execute_update_memo(&json!({}), &store);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_link_memos_reference() {
+        let store = setup_store_with_memos();
+        let result = execute_link_memos(
+            &json!({"from_uid": "uid0", "to_uid": "uid1", "relation_type": "REFERENCE"}),
+            &store,
+        )
+        .unwrap();
+        assert_eq!(result["from_uid"].as_str().unwrap(), "uid0");
+        assert_eq!(result["to_uid"].as_str().unwrap(), "uid1");
+        assert_eq!(result["relation_type"].as_str().unwrap(), "REFERENCE");
+
+        // 验证关系已写入
+        let relations = store
+            .with_conn(|c| {
+                memos_core::memo_relation::list(
+                    c,
+                    &memos_core::memo_relation::FindMemoRelation::default(),
+                )
+            })
+            .unwrap();
+        assert_eq!(relations.len(), 1);
+    }
+
+    #[test]
+    fn test_link_memos_invalid_type() {
+        let store = setup_store_with_memos();
+        let result = execute_link_memos(
+            &json!({"from_uid": "uid0", "to_uid": "uid1", "relation_type": "INVALID"}),
+            &store,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_link_memos_not_found() {
+        let store = setup_store_with_memos();
+        let result = execute_link_memos(
+            &json!({"from_uid": "uid0", "to_uid": "missing", "relation_type": "REFERENCE"}),
+            &store,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_review_cards() {
+        let store = setup_store_with_memos();
+        // 先创建 deck
+        let deck = store
+            .with_conn(|c| memos_core::review::create_deck(c, "test-deck", &["rust".to_string()], 3))
+            .unwrap();
+
+        let result = execute_create_review_cards(
+            &json!({
+                "deck_id": deck.id,
+                "cards": [
+                    {"memo_uid": "uid0", "card_type": "basic", "front": "什么是所有权？", "back": "Rust 的所有权机制", "angle": "定义"},
+                    {"memo_uid": "uid1", "card_type": "cloze", "front": "Rust 用 {{}} 管理内存", "back": "所有权", "cloze_answer": "所有权", "angle": "应用"},
+                ]
+            }),
+            &store,
+        )
+        .unwrap();
+        assert_eq!(result["inserted"].as_u64().unwrap(), 2);
+        assert_eq!(result["deck_name"].as_str().unwrap(), "test-deck");
+
+        // 验证卡片已写入
+        let cards = store
+            .with_conn(|c| memos_core::review::list_cards(c, deck.id))
+            .unwrap();
+        assert_eq!(cards.len(), 2);
+    }
+
+    #[test]
+    fn test_create_review_cards_invalid_card() {
+        let store = setup_store_with_memos();
+        let deck = store
+            .with_conn(|c| memos_core::review::create_deck(c, "d2", &[], 1))
+            .unwrap();
+        let result = execute_create_review_cards(
+            &json!({
+                "deck_id": deck.id,
+                "cards": [
+                    {"memo_uid": "", "card_type": "basic", "front": "", "back": "x"},
+                    {"memo_uid": "uid0", "card_type": "basic", "front": "ok", "back": "ok"},
+                ]
+            }),
+            &store,
+        )
+        .unwrap();
+        assert_eq!(result["inserted"].as_u64().unwrap(), 1);
+        let errors = result["errors"].as_array().unwrap();
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn test_create_review_cards_deck_not_found() {
+        let store = setup_store_with_memos();
+        let result = execute_create_review_cards(
+            &json!({"deck_id": 9999, "cards": [{"memo_uid": "uid0", "card_type": "basic", "front": "q", "back": "a"}]}),
+            &store,
+        );
         assert!(result.is_err());
     }
 }

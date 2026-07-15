@@ -463,3 +463,24 @@ pub fn deck_stats(conn: &Connection, deck_id: i32) -> CoreResult<DeckStats> {
         last_reviewed_ts,
     })
 }
+
+/// 全局到期卡片总数（跨所有 deck）
+pub fn total_due_count(conn: &Connection) -> CoreResult<i32> {
+    let now = Utc::now().timestamp();
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM review_card WHERE due <= ?1 AND memo_deleted = 0",
+        params![now],
+        |r| r.get(0),
+    )?;
+    Ok(count)
+}
+
+/// 所有复习记录的时间戳（用于热力图）
+pub fn list_review_timestamps(conn: &Connection) -> CoreResult<Vec<i64>> {
+    let mut stmt = conn.prepare("SELECT reviewed_ts FROM review_record ORDER BY reviewed_ts ASC")?;
+    let timestamps: Vec<i64> = stmt
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(timestamps)
+}

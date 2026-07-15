@@ -30,4 +30,12 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* 搜索关键词高亮 */
+  mark.search-highlight {
+    background-color: color-mix(in oklch, var(--primary) 25%, transparent);
+    color: inherit;
+    padding: 0 0.1em;
+    border-radius: 2px;
+  }
 }

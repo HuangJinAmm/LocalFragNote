@@ -292,6 +292,7 @@
       "has-code": "有代码",
       "has-link": "有链接",
       "has-task-list": "有待办",
+      "from-date": "{{date}} 起",
       "label": "过滤器"
     },
     "compact-mode": "紧凑模式",
@@ -304,7 +305,7 @@
     "oldest-first": "最早优先",
     "order": "顺序",
     "order-by": "排序",
-    "search-placeholder": "搜索备忘录",
+    "search-placeholder": "搜索备忘录（支持 tag: from: has: is: 语法）",
     "search-placeholder-semantic": "按语义搜索...",
     "search-mode-tooltip": "切换搜索模式",
     "search-mode-keyword": "关键词搜索",
@@ -361,6 +362,17 @@
       "title": "任务",
       "uncheck-all": "全部取消完成",
       "updated": "任务已更新"
+    },
+    "ai-actions": {
+      "title": "AI",
+      "summarize": "总结",
+      "summarize-prompt": "请简洁地总结以下备忘录内容：",
+      "translate": "翻译",
+      "translate-prompt": "请将以下备忘录内容翻译为英文（若已是英文则翻译为中文）：",
+      "polish": "润色",
+      "polish-prompt": "请润色以下备忘录内容，使其更清晰易读，但保留原意。只输出润色后的文本：",
+      "generate-cards": "生成复习卡片",
+      "cards-prompt": "基于以下备忘录内容，生成复习卡片（问答形式），并通过调用 create_review_cards 工具持久化，其中 memoUid 参数设为 {{uid}}。然后简要描述你创建了哪些卡片。"
     }
   },
   "message": {
@@ -471,7 +483,11 @@
     "daily-new-card-limit-desc": "每天最多学习的新卡数（0=不限制）",
     "default-cards-per-memo": "默认每条笔记卡片数",
     "default-cards-per-memo-desc": "生成卡片时每条笔记的默认上限",
-    "use-default": "使用默认"
+    "use-default": "使用默认",
+    "heatmap-title": "复习活动",
+    "heatmap-description": "所选年份每日复习次数",
+    "due-reminder-title": "复习卡片已到期",
+    "due-reminder-body": "你有 {{count}} 张卡片等待复习。"
   },
   "router": {
     "back-to-top": "回到顶部",
@@ -754,13 +770,23 @@
     },
     "account": {
       "activity-description": "所选年份每日备忘录创建活动。",
+      "backup-description": "将全部备忘录导出为 Markdown 或 JSON 文件，或从之前导出的文件中导入。相同 uid 的笔记会被跳过。",
+      "backup-title": "备份与恢复",
       "change-password": "修改密码",
       "danger-area": "危险操作区",
       "danger-area-description": "不可逆的账号操作统一放在这里，执行前请再次确认影响。",
       "delete-account": "删除账号",
       "delete-account-description": "永久删除当前账号，并移除它在这个实例中的全部访问权限。此操作无法撤销。",
       "email-note": "可选",
+      "export-failed": "导出失败",
+      "export-json": "导出 JSON",
+      "export-markdown": "导出 Markdown",
       "export-memos": "导出备忘录",
+      "import-empty": "文件为空或无效",
+      "import-failed": "导入失败",
+      "import-json": "导入 JSON",
+      "import-markdown": "导入 Markdown",
+      "import-success": "已导入 {{count}} 条笔记",
       "nickname-note": "显示在横幅中",
       "openapi-reset": "重置 OpenAPI 密钥（Key）",
       "openapi-sample-post": "您好 #memos 来自 {{url}}",

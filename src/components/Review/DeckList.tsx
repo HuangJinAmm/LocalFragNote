@@ -6,6 +6,7 @@ import { useGenerateCards, useReviewDecks } from "./hooks";
 import type { ReviewDeck } from "./types";
 import { useTranslate } from "@/utils/i18n";
 import DeckEditor from "./DeckEditor";
+import ReviewHeatmap from "./ReviewHeatmap";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Props {
@@ -58,6 +59,7 @@ const DeckList = ({ onSelectDeck }: Props) => {
 
   return (
     <div className="space-y-4">
+      <ReviewHeatmap />
       <div className="flex justify-end">
         <Button onClick={() => setEditorOpen(true)} size="sm">
           <PlusIcon className="size-4 mr-2" />

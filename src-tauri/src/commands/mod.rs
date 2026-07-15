@@ -4,6 +4,7 @@
 
 pub mod ai_chat;
 pub mod attachment;
+pub mod import_export;
 pub mod lan;
 pub mod memo;
 pub mod memo_relation;

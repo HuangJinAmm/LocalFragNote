@@ -90,6 +90,14 @@ pub struct FindMemo {
     pub updated_ts_after: Option<i64>,
     /// 更新时间过滤（<）
     pub updated_ts_before: Option<i64>,
+    /// 仅查置顶 memo
+    pub pinned_only: Option<bool>,
+    /// 过滤包含链接的 memo（markdown 链接语法）
+    pub has_link: Option<bool>,
+    /// 过滤包含任务列表的 memo
+    pub has_task_list: Option<bool>,
+    /// 过滤包含代码块的 memo
+    pub has_code: Option<bool>,
     pub limit: Option<i32>,
     pub offset: Option<i32>,
     pub order_by_pinned: bool,
@@ -258,6 +266,18 @@ pub fn list(conn: &Connection, find: &FindMemo) -> CoreResult<Vec<Memo>> {
     if let Some(ts) = find.updated_ts_before {
         sql.push_str(" AND updated_ts < ?");
         args.push(Box::new(ts));
+    }
+    if find.pinned_only.unwrap_or(false) {
+        sql.push_str(" AND pinned = 1");
+    }
+    if find.has_link.unwrap_or(false) {
+        sql.push_str(" AND (content LIKE '%](http%' OR content LIKE '%](/%' OR content LIKE '%](mailto:%')");
+    }
+    if find.has_task_list.unwrap_or(false) {
+        sql.push_str(" AND (content LIKE '%- [ ]%' OR content LIKE '%- [x]%' OR content LIKE '%- [X]%')");
+    }
+    if find.has_code.unwrap_or(false) {
+        sql.push_str(" AND content LIKE '%```%'");
     }
 
     // 排序：FTS 按相关度排序；向量搜索在 Rust 层按 KNN 顺序排序；否则按默认时间排序

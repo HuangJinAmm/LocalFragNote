@@ -72,6 +72,14 @@ pub struct ListMemosRequest {
     pub created_ts_before: Option<i64>,
     pub updated_ts_after: Option<i64>,
     pub updated_ts_before: Option<i64>,
+    /// 仅查置顶 memo
+    pub pinned_only: Option<bool>,
+    /// 过滤包含链接的 memo
+    pub has_link: Option<bool>,
+    /// 过滤包含任务列表的 memo
+    pub has_task_list: Option<bool>,
+    /// 过滤包含代码块的 memo
+    pub has_code: Option<bool>,
     pub limit: Option<i32>,
     pub offset: Option<i32>,
     #[serde(default)]
@@ -502,6 +510,10 @@ fn build_find(req: ListMemosRequest) -> FindMemo {
         created_ts_before: req.created_ts_before,
         updated_ts_after: req.updated_ts_after,
         updated_ts_before: req.updated_ts_before,
+        pinned_only: req.pinned_only,
+        has_link: req.has_link,
+        has_task_list: req.has_task_list,
+        has_code: req.has_code,
         limit: req.limit,
         offset: req.offset,
         order_by_pinned: req.order_by_pinned,

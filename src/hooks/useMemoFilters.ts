@@ -89,6 +89,12 @@ export const useMemoFilters = (options: UseMemoFiltersOptions = {}): string | un
         const endTimestamp = startTimestamp + 60 * 60 * 24;
 
         conditions.push(`created_ts >= timestamp(${startTimestamp}) && created_ts < timestamp(${endTimestamp})`);
+      } else if (filter.factor === "fromDate") {
+        // fromDate 值为 ISO 日期字符串（YYYY-MM-DD），生成 created_ts >= timestamp(...)
+        const filterDate = new Date(filter.value);
+        const filterUtcTimestamp = filterDate.getTime() + filterDate.getTimezoneOffset() * 60 * 1000;
+        const startTimestamp = Math.floor(filterUtcTimestamp / 1000);
+        conditions.push(`created_ts >= timestamp(${startTimestamp})`);
       }
     }
     // 聚合 contentSearch → 单个 fts.match（FTS5 空格 = 隐式 AND）
