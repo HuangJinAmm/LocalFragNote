@@ -64,7 +64,10 @@ export const rehypeHighlightSearch = (terms: string[]) => {
     .map((t) => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
 
   if (regexes.length === 0) {
-    return () => () => {}; // 无关键词，无操作
+    // 返回 undefined：unified 不会向管线添加 transformer，等价于无操作。
+    // 切勿返回 () => () => {} —— transformer 被调用后返回的 truthy 函数会被 unified
+    // 误当作替换树，用函数对象覆盖整个 HAST，导致 ReactMarkdown 渲染空白。
+    return;
   }
 
   return (tree: Root) => {
