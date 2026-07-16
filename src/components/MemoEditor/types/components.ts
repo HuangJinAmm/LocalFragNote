@@ -1,5 +1,6 @@
 import type { Location, Memo, Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import type { AudioRecorderStatus } from "../hooks/useAudioRecorder";
+import type { LocalFile } from "./attachment";
 
 export interface MemoEditorProps {
   className?: string;
@@ -25,6 +26,9 @@ export interface EditorContentProps {
   placeholder?: string;
   /** Invoked by the in-editor save shortcut (Cmd/Ctrl+Enter). */
   onSubmit: () => void;
+  /** Called when a file is added via drag-drop or paste. If omitted, falls
+   *  back to dispatching addLocalFile directly. */
+  onFileAdded?: (file: LocalFile) => void;
 }
 
 export interface EditorToolbarProps {
@@ -41,6 +45,8 @@ export interface EditorToolbarProps {
   /** Whether document-summary is enabled (persisted preference). */
   summaryEnabled: boolean;
   onToggleSummary: () => void;
+  /** Passed through to InsertMenu for file-add interception. */
+  onFileAdded?: (file: LocalFile) => void;
 }
 
 export interface EditorMetadataProps {
@@ -79,6 +85,9 @@ export interface InsertMenuProps {
   /** Persisted toggle for the normal-mode formatting toolbar. */
   isFormattingToolbarVisible?: boolean;
   onToggleFormattingToolbar?: () => void;
+  /** Called when a file is added via the file input. If omitted, falls back
+   *  to dispatching addLocalFile directly. */
+  onFileAdded?: (file: LocalFile) => void;
 }
 
 export interface VisibilitySelectorProps {

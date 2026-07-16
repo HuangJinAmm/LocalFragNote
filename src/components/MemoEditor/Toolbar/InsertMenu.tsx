@@ -31,13 +31,17 @@ const InsertMenu = (props: InsertMenuProps) => {
     onToggleFormattingToolbar,
     isFormattingToolbarVisible,
     isUploading: isUploadingProp,
+    onFileAdded,
   } = props;
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
 
   const { fileInputRef, selectingFlag, handleFileInputChange, handleUploadClick } = useFileUpload((newFiles: LocalFile[]) => {
-    newFiles.forEach((file) => dispatch(actions.addLocalFile(file)));
+    newFiles.forEach((file) => {
+      if (onFileAdded) onFileAdded(file);
+      else dispatch(actions.addLocalFile(file));
+    });
   });
 
   const linkMemo = useLinkMemo({

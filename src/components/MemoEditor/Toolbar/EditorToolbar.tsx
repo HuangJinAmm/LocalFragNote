@@ -20,6 +20,7 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
   onToggleAutoTag,
   summaryEnabled,
   onToggleSummary,
+  onFileAdded,
 }) => {
   const t = useTranslate();
   const { actions, dispatch } = useEditorContext();
@@ -56,6 +57,7 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
           onAudioRecorderClick={onAudioRecorderClick}
           isFormattingToolbarVisible={isFormattingToolbarVisible}
           onToggleFormattingToolbar={onToggleFormattingToolbar}
+          onFileAdded={onFileAdded}
         />
         <VisibilitySelector value={visibility} onChange={handleVisibilityChange} />
         <label className="flex items-center gap-1.5 px-2 cursor-pointer select-none text-sm text-muted-foreground">

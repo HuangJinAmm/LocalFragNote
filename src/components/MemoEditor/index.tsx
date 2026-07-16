@@ -15,9 +15,9 @@ import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { convertVisibilityFromString } from "@/utils/memo";
 import { AudioRecorderPanel, EditorContent, EditorMetadata, FocusModeOverlay, TagSuggestionDialog, TimestampPopover } from "./components";
-import { AUTO_TAG_STORAGE_KEY, FOCUS_MODE_STYLES, FORMATTING_TOOLBAR_STORAGE_KEY } from "./constants";
+import { AUTO_TAG_STORAGE_KEY, FOCUS_MODE_STYLES, FORMATTING_TOOLBAR_STORAGE_KEY, SUMMARY_STORAGE_KEY } from "./constants";
 import { useAudioRecorder, useAutoSave, useFocusMode, useMemoInit } from "./hooks";
-import { errorService, memoService, transcriptionService, validationService } from "./services";
+import { documentSummaryService, errorService, isSummarizable, memoService, transcriptionService, validationService } from "./services";
 import { EditorProvider, useEditorContext, useEditorSelector } from "./state";
 import { EditorToolbar, FormattingToolbar } from "./Toolbar";
 import type { MemoEditorProps } from "./types";
@@ -61,6 +61,8 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   const [isFormattingToolbarVisible, setFormattingToolbarVisible] = useLocalStorage(FORMATTING_TOOLBAR_STORAGE_KEY, false);
   // Persisted preference: auto-extract tags on save via AI.
   const [autoTagEnabled, setAutoTagEnabled] = useLocalStorage(AUTO_TAG_STORAGE_KEY, false);
+  // Persisted preference: summarize document attachments on add.
+  const [summaryEnabled, setSummaryEnabled] = useLocalStorage(SUMMARY_STORAGE_KEY, false);
   // Tag suggestion dialog state — active only when autoTagEnabled is ON.
   const [tagDialog, setTagDialog] = useState<{ open: boolean; loading: boolean; suggested: string[]; existing: string[] }>({
     open: false,
@@ -130,10 +132,41 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
     editor.scrollToCursor();
   }, []);
 
+  const handleFileAdded = useCallback(async (localFile: LocalFile) => {
+    // 先入队，避免阻塞 UI 与附件流程
+    dispatch(actions.addLocalFile(localFile));
+
+    if (!summaryEnabled) return;
+    if (!isSummarizable(localFile.file.name)) return;
+
+    const toastId = toast.loading(t("editor.summary.generating", { name: localFile.file.name }));
+    try {
+      const result = await documentSummaryService.summarize(localFile.file);
+      if (result.kind === "skipped") {
+        toast.dismiss(toastId);
+        return;
+      }
+      const editor = editorRef.current;
+      if (editor) {
+        editor.appendMarkdown(`\n\n${result.markdown}`);
+      }
+      toast.success(t("editor.summary.done"), { id: toastId });
+    } catch (e) {
+      toast.error(
+        t("editor.summary.failed", { name: localFile.file.name, reason: String(e) }),
+        { id: toastId },
+      );
+    }
+  }, [actions, dispatch, summaryEnabled, t]);
+
+  const handleToggleSummary = useCallback(() => {
+    setSummaryEnabled((v) => !v);
+  }, [setSummaryEnabled]);
+
   const handleTranscribeRecordedAudio = useCallback(
     async (localFile: LocalFile) => {
       if (!canTranscribe) {
-        dispatch(actions.addLocalFile(localFile));
+        void handleFileAdded(localFile);
         setIsTranscribingAudio(false);
         setIsAudioRecorderOpen(false);
         return;
@@ -142,7 +175,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
       try {
         const text = (await transcriptionService.transcribeFile(localFile.file)).trim();
         if (!text) {
-          dispatch(actions.addLocalFile(localFile));
+          void handleFileAdded(localFile);
           toast.error(t("editor.audio-recorder.transcribe-empty"));
           return;
         }
@@ -152,13 +185,13 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
       } catch (error) {
         console.error(error);
         toast.error(errorService.getErrorMessage(error) || t("editor.audio-recorder.transcribe-error"));
-        dispatch(actions.addLocalFile(localFile));
+        void handleFileAdded(localFile);
       } finally {
         setIsTranscribingAudio(false);
         setIsAudioRecorderOpen(false);
       }
     },
-    [actions, canTranscribe, dispatch, insertTranscribedText, t],
+    [canTranscribe, handleFileAdded, insertTranscribedText, t],
   );
 
   const audioRecorder = useAudioRecorder({
@@ -168,7 +201,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
         return;
       }
 
-      dispatch(actions.addLocalFile(localFile));
+      void handleFileAdded(localFile);
       setIsAudioRecorderOpen(false);
     },
     onRecordingEmpty: (mode) => {
@@ -400,7 +433,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
         )}
 
         {/* Editor content grows to fill available space in focus mode */}
-        <EditorContent ref={editorRef} placeholder={placeholder} onSubmit={handleSave} />
+        <EditorContent ref={editorRef} placeholder={placeholder} onSubmit={handleSave} onFileAdded={handleFileAdded} />
 
         {isAudioRecorderOpen && (audioRecorder.isBusy || isTranscribingAudio) && (
           <AudioRecorderPanel
@@ -426,6 +459,9 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
             onToggleFormattingToolbar={handleToggleFormattingToolbar}
             autoTagEnabled={autoTagEnabled}
             onToggleAutoTag={handleToggleAutoTag}
+            summaryEnabled={summaryEnabled}
+            onToggleSummary={handleToggleSummary}
+            onFileAdded={handleFileAdded}
           />
         </div>
       </div>

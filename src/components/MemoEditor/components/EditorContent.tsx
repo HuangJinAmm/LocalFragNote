@@ -16,7 +16,7 @@ import type { EditorController } from "../types/editorController";
  * editor serializes into state.content on every change and exposes its
  * formatting capability for the focus-mode toolbar.
  */
-export const EditorContent = forwardRef<EditorController, EditorContentProps>(({ placeholder, onSubmit }, ref) => {
+export const EditorContent = forwardRef<EditorController, EditorContentProps>(({ placeholder, onSubmit, onFileAdded }, ref) => {
   const { actions, dispatch } = useEditorContext();
   const { createBlobUrl } = useBlobUrls();
   const content = useEditorSelector((s) => s.content);
@@ -28,7 +28,10 @@ export const EditorContent = forwardRef<EditorController, EditorContentProps>(({
       previewUrl: createBlobUrl(file),
       origin: "upload",
     }));
-    localFiles.forEach((localFile) => dispatch(actions.addLocalFile(localFile)));
+    localFiles.forEach((localFile) => {
+      if (onFileAdded) onFileAdded(localFile);
+      else dispatch(actions.addLocalFile(localFile));
+    });
   });
 
   const handleContentChange = (content: string) => {
@@ -57,7 +60,10 @@ export const EditorContent = forwardRef<EditorController, EditorContentProps>(({
       previewUrl: createBlobUrl(file),
       origin: "upload",
     }));
-    localFiles.forEach((localFile) => dispatch(actions.addLocalFile(localFile)));
+    localFiles.forEach((localFile) => {
+      if (onFileAdded) onFileAdded(localFile);
+      else dispatch(actions.addLocalFile(localFile));
+    });
     event.preventDefault();
   };
 
