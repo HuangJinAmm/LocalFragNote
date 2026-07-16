@@ -18,6 +18,8 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
   onToggleFormattingToolbar,
   autoTagEnabled,
   onToggleAutoTag,
+  summaryEnabled,
+  onToggleSummary,
 }) => {
   const t = useTranslate();
   const { actions, dispatch } = useEditorContext();
@@ -59,6 +61,10 @@ export const EditorToolbar: FC<EditorToolbarProps> = ({
         <label className="flex items-center gap-1.5 px-2 cursor-pointer select-none text-sm text-muted-foreground">
           <Switch checked={autoTagEnabled} onCheckedChange={onToggleAutoTag} />
           <span>{t("editor.auto-tag.toggle")}</span>
+        </label>
+        <label className="flex items-center gap-1.5 px-2 cursor-pointer select-none text-sm text-muted-foreground">
+          <Switch checked={summaryEnabled} onCheckedChange={onToggleSummary} />
+          <span>{t("editor.summary.toggle")}</span>
         </label>
       </div>
 

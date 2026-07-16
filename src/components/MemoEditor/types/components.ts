@@ -38,6 +38,9 @@ export interface EditorToolbarProps {
   /** Whether auto-tag extraction is enabled (persisted preference). */
   autoTagEnabled: boolean;
   onToggleAutoTag: () => void;
+  /** Whether document-summary is enabled (persisted preference). */
+  summaryEnabled: boolean;
+  onToggleSummary: () => void;
 }
 
 export interface EditorMetadataProps {

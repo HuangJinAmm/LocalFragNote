@@ -19,3 +19,6 @@ export const FORMATTING_TOOLBAR_STORAGE_KEY = "memos-editor-formatting-toolbar";
 
 // localStorage key for the auto-tag toggle. Defaults to off.
 export const AUTO_TAG_STORAGE_KEY = "memos-editor-auto-tag";
+
+// localStorage key for the document-summary toggle. Defaults to off.
+export const SUMMARY_STORAGE_KEY = "memos-editor-summary";
