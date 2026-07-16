@@ -30,6 +30,20 @@ export function createController(view: EditorView, formatting: FormattingControl
       view.dispatch({ changes: { from, to, insert }, selection: { anchor: caret }, scrollIntoView: true });
       view.focus();
     },
+    appendMarkdown: (markdown) => {
+      if (!markdown) return;
+      const docLen = view.state.doc.length;
+      const doc = view.state.doc.toString();
+      const { prefix, suffix } = blockPad(doc, "");
+      const insert = prefix + markdown + suffix;
+      const caret = docLen + insert.length;
+      view.dispatch({
+        changes: { from: docLen, to: docLen, insert },
+        selection: { anchor: caret },
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
     scrollToCursor: () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) }),
     selectAll: () => view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) }),
     formatting,
