@@ -4,6 +4,7 @@
 
 pub mod ai_chat;
 pub mod attachment;
+pub mod document_summary;
 pub mod import_export;
 pub mod lan;
 pub mod llm_runner;

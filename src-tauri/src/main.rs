@@ -252,6 +252,7 @@ fn main() {
             commands::attachment::update_attachment,
             commands::attachment::delete_attachment,
             commands::attachment::get_attachment_thumbnail,
+            commands::document_summary::summarize_document_content,
             // reaction
             commands::reaction::upsert_reaction,
             commands::reaction::list_reactions,
