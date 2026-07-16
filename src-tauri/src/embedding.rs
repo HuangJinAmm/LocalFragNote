@@ -42,11 +42,12 @@ fn embedder_slot() -> &'static Mutex<Option<Result<Embedder, String>>> {
     EMBEDDER_SLOT.get_or_init(|| Mutex::new(None))
 }
 
-/// 获取模型缓存目录（用户数据目录下的 models/all-MiniLM-L6-v2）
+/// 获取模型缓存目录（用户目录下 localFragNote/models/all-MiniLM-L6-v2）
 fn model_dir() -> IpcResult<PathBuf> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| IpcError::Internal("无法获取用户数据目录".into()))?
-        .join("memos")
+    #[allow(deprecated)]
+    let dir = dirs::home_dir()
+        .ok_or_else(|| IpcError::Internal("无法获取用户目录".into()))?
+        .join("localFragNote")
         .join("models")
         .join("all-MiniLM-L6-v2");
     std::fs::create_dir_all(&dir)

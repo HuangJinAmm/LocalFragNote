@@ -158,7 +158,11 @@ fn main() {
         })
         .setup(|app| {
             tracing::info!(pid = current_pid(), "setup: begin");
-            let data_dir = app.path().app_data_dir().expect("无法获取数据目录");
+            // 应用数据统一存储在用户目录下的 localFragNote 文件夹
+            #[allow(deprecated)]
+            let data_dir = dirs::home_dir()
+                .expect("无法获取用户目录")
+                .join("localFragNote");
             std::fs::create_dir_all(&data_dir).expect("无法创建数据目录");
             let db_path = data_dir.join("memos.db");
             tracing::info!("数据库路径: {}", db_path.display());

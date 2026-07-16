@@ -9,7 +9,7 @@ interface Props {
 function MemosLogo(props: Props) {
   const { collapsed } = props;
   const { generalSetting: instanceGeneralSetting } = useInstance();
-  const title = instanceGeneralSetting.customProfile?.title || "Memos";
+  const title = instanceGeneralSetting.customProfile?.title || "破碎星球";
 
   // 本地应用：不显示 app logo icon，仅保留标题文字
   return (

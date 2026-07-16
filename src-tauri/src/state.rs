@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 pub struct AppState {
     pub store: Mutex<Store>,
-    /// 附件本地存储根目录（app_data_dir/attachments）
+    /// 附件本地存储根目录（用户目录/localFragNote/attachments）
     pub attachments_dir: std::path::PathBuf,
     /// LAN 模块运行时状态，支持在设置页里手动启停
     pub lan: RwLock<Option<Arc<LanState>>>,

@@ -59,8 +59,8 @@ function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props)
 
   const handleRestoreButtonClick = () => {
     setPartialState({
-      title: "Memos",
-      logoUrl: "/logo.webp",
+      title: "破碎星球",
+      logoUrl: "/logo2.png",
       description: "",
     });
   };

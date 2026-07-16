@@ -1,6 +1,6 @@
 //! iroh Endpoint 初始化与 mDNS 发现
 //!
-//! - SecretKey 持久化到 app_data_dir/lan_identity.key
+//! - SecretKey 持久化到 用户目录/localFragNote/lan_identity.key
 //! - mDNS 通过 iroh-mdns-address-lookup 启用
 //! - 展示名通过 instance_setting:lan_display_name 存储
 //! - mDNS 发现代码在后台 task 中订阅 DiscoveryEvent 并更新 peers 缓存
@@ -93,10 +93,11 @@ pub async fn start_lan_module(app_handle: &tauri::AppHandle) -> Result<Arc<LanSt
         return Ok(lan);
     }
 
-    let data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| LanError::LocalStore(format!("failed to resolve app_data_dir: {e}")))?;
+    // 应用数据统一存储在用户目录下的 localFragNote 文件夹
+    #[allow(deprecated)]
+    let data_dir = dirs::home_dir()
+        .ok_or_else(|| LanError::LocalStore("无法获取用户目录".into()))?
+        .join("localFragNote");
     std::fs::create_dir_all(&data_dir)?;
 
     let state = init_lan_state(&data_dir).await?;

@@ -840,7 +840,7 @@ const LOCAL_PROFILE = {
   disallowPasswordAuth: false,
   additionalScript: "",
   additionalStyle: "",
-  customProfile: { title: "Memos", description: "", logoUrl: "", locale: "en", appearance: "SYSTEM" },
+  customProfile: { title: "破碎星球", description: "", logoUrl: "/logo2.png", locale: "en", appearance: "SYSTEM" },
 };
 
 export const instanceServiceClient = {

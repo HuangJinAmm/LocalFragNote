@@ -9,7 +9,7 @@ const NavigationDrawer = () => {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const { generalSetting } = useInstance();
-  const title = generalSetting.customProfile?.title || "Memos";
+  const title = generalSetting.customProfile?.title || "破碎星球";
 
   useEffect(() => {
     setOpen(false);
