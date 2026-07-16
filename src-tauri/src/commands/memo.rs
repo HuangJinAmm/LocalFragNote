@@ -389,11 +389,6 @@ pub async fn suggest_tags(
     content: String,
 ) -> IpcResult<Vec<String>> {
     let store = state.store();
-    let providers = crate::ai::provider::load_providers(&store);
-    let provider = providers
-        .first()
-        .cloned()
-        .ok_or_else(|| IpcError::BadRequest("未配置 AI provider，请先在设置中配置".into()))?;
 
     // 笔记中已有的标签，用于排除
     let existing_tags: Vec<String> = markdown::extract_tags(&content);
@@ -430,48 +425,7 @@ pub async fn suggest_tags(
         )
     };
 
-    let body = serde_json::json!({
-        "model": provider.model,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": user_message },
-        ],
-        "stream": false,
-    });
-
-    let url = format!(
-        "{}/chat/completions",
-        provider.base_url.trim_end_matches('/')
-    );
-    let mut req = ureq::post(&url).set("Content-Type", "application/json");
-    if !provider.api_key.is_empty() {
-        req = req.set("Authorization", &format!("Bearer {}", provider.api_key));
-    }
-
-    let response = req
-        .send_string(&body.to_string())
-        .map_err(|e| IpcError::Internal(format!("AI 请求失败: {e}")))?;
-
-    if response.status() >= 400 {
-        let status = response.status();
-        let body_text = response.into_string().unwrap_or_default();
-        return Err(IpcError::Internal(format!("HTTP {status}: {body_text}")));
-    }
-
-    let resp_json: Value = serde_json::from_str(
-        &response
-            .into_string()
-            .map_err(|e| IpcError::Internal(format!("读取响应失败: {e}")))?,
-    )
-    .map_err(|e| IpcError::Internal(format!("解析响应 JSON 失败: {e}")))?;
-
-    let ai_text = resp_json
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("");
+    let ai_text = crate::ai::llm_call::call_first_provider(&store, system_prompt, &user_message)?;
 
     // 解析 AI 返回的标签（逗号或顿号分隔），去除 # 前缀，排除笔记中已有的标签
     let suggested: Vec<String> = ai_text
