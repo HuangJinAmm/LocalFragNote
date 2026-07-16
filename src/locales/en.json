@@ -306,6 +306,13 @@
       "no-suggestions": "No tag suggestions. Save without tags?",
       "add-and-save": "Add & Save",
       "save-without-tags": "Save without tags"
+    },
+    "summary": {
+      "toggle": "Summarize document attachments",
+      "toggle-hint": "Auto-extract content from PDF/DOCX/PPT/ZIP and append to memo",
+      "generating": "Generating summary for {{name}}…",
+      "done": "Summary generated and appended to memo",
+      "failed": "Failed to summarize {{name}}: {{reason}}"
     }
   },
   "inbox": {

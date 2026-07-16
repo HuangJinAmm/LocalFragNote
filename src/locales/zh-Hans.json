@@ -256,6 +256,13 @@
       "no-suggestions": "没有标签建议。直接保存？",
       "add-and-save": "添加并保存",
       "save-without-tags": "不添加标签保存"
+    },
+    "summary": {
+      "toggle": "添加文档附件时生成摘要",
+      "toggle-hint": "对 PDF/DOCX/PPT/ZIP 等自动提取内容追加到笔记末尾",
+      "generating": "正在为 {{name}} 生成摘要…",
+      "done": "已生成摘要并追加到笔记末尾",
+      "failed": "为 {{name}} 生成摘要失败：{{reason}}"
     }
   },
   "inbox": {
