@@ -1,4 +1,5 @@
 export * from "./cacheService";
+export * from "./documentSummaryService";
 export * from "./errorService";
 export * from "./memoService";
 export * from "./transcriptionService";
