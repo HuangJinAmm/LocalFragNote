@@ -377,7 +377,7 @@
     "order": "Order",
     "order-by": "Order By",
     "outline": "Outline",
-    "search-placeholder": "Search memos (supports tag: from: has: is:)",
+    "search-placeholder": "Search memos",
     "search-placeholder-semantic": "Search by meaning...",
     "search-mode-tooltip": "Toggle search mode",
     "search-mode-keyword": "Keyword search",
