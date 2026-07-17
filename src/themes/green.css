@@ -1,0 +1,63 @@
+:root {
+  /* ==========================================================================
+     绿色护眼主题 (Green Eye-Care)
+     设计理念:豆沙绿背景降低屏幕刺激,深绿主色调统一视觉,暖灰中性色减少疲劳。
+     适合长时间阅读/编辑场景。所有色值基于 OKLCH 保证感知均匀。
+     ========================================================================== */
+
+  /* Surfaces - 豆沙绿系层次,模拟纸张反光 */
+  --background: oklch(0.965 0.018 135);
+  --foreground: oklch(0.28 0.02 140);
+
+  --card: oklch(0.985 0.012 135);
+  --card-foreground: oklch(0.25 0.018 140);
+
+  --popover: oklch(0.985 0.012 135);
+  --popover-foreground: oklch(0.28 0.02 140);
+
+  /* Primary - 深翠绿,用于选中态/链接/聚焦控件 */
+  --primary: oklch(0.45 0.09 150);
+  --primary-foreground: oklch(0.98 0.008 135);
+
+  /* Secondary - 略带绿调的浅灰,用于次要按钮 */
+  --secondary: oklch(0.92 0.02 135);
+  --secondary-foreground: oklch(0.38 0.022 140);
+
+  /* Muted - 内联背景(代码、骨架、元数据) */
+  --muted: oklch(0.9 0.022 135);
+  --muted-foreground: oklch(0.52 0.018 140);
+
+  /* Accent - 悬停态,比 muted 更亮的绿调 */
+  --accent: oklch(0.88 0.03 140);
+  --accent-foreground: oklch(0.28 0.02 140);
+
+  /* Destructive - 暖红,在绿背景上仍清晰 */
+  --destructive: oklch(0.5 0.16 25);
+  --destructive-foreground: oklch(0.98 0.008 135);
+
+  /* Feedback - success/warning 与全局语义一致,微调色相贴合绿系 */
+  --success: oklch(0.55 0.13 155);
+  --success-foreground: oklch(0.98 0.01 150);
+  --warning: oklch(0.62 0.12 70);
+  --warning-foreground: oklch(0.25 0.03 75);
+
+  /* Borders - 布局分隔线与表单边框 */
+  --border: oklch(0.86 0.02 135);
+  --input: oklch(0.8 0.025 135);
+  --ring: oklch(0.45 0.09 150);
+
+  /* Sidebar - 比主背景略深的绿,层次感 */
+  --sidebar: oklch(0.945 0.022 135);
+  --sidebar-foreground: oklch(0.32 0.018 140);
+  --sidebar-accent: oklch(0.9 0.025 135);
+  --sidebar-accent-foreground: oklch(0.28 0.02 140);
+
+  /* Shadows - 暖灰阴影,贴合绿系背景 */
+  --shadow-xs: 0 1px 3px 0px hsl(140 10% 20% / 0.04);
+  --shadow-sm: 0 1px 3px 0px hsl(140 10% 20% / 0.08), 0 1px 2px -1px hsl(140 10% 20% / 0.08);
+  --shadow: 0 1px 3px 0px hsl(140 10% 20% / 0.08), 0 1px 2px -1px hsl(140 10% 20% / 0.08);
+  --shadow-md: 0 1px 3px 0px hsl(140 10% 20% / 0.08), 0 2px 4px -1px hsl(140 10% 20% / 0.08);
+  --shadow-lg: 0 1px 3px 0px hsl(140 10% 20% / 0.08), 0 4px 6px -1px hsl(140 10% 20% / 0.08);
+  --shadow-xl: 0 1px 3px 0px hsl(140 10% 20% / 0.08), 0 8px 10px -1px hsl(140 10% 20% / 0.08);
+  --shadow-2xl: 0 1px 3px 0px hsl(140 10% 20% / 0.18);
+}

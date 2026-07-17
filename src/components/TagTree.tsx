@@ -1,6 +1,7 @@
 import { ChevronRightIcon, HashIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { type MemoFilter, useMemoFilterContext } from "@/contexts/MemoFilterContext";
+import { useTranslate } from "@/utils/i18n";
 
 interface Tag {
   key: string;
@@ -14,17 +15,32 @@ interface Props {
   expandSubTags: boolean;
 }
 
+/// 树模式根节点分页大小,避免一次渲染过多根级标签
+const TREE_ROOT_PAGE_SIZE = 50;
+
 const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
+  const t = useTranslate();
   const [tags, setTags] = useState<Tag[]>([]);
+  const [rootLimit, setRootLimit] = useState(TREE_ROOT_PAGE_SIZE);
 
   useEffect(() => {
-    const sortedTagAmounts = Array.from(rawTagAmounts).sort();
+    // 用 Map 加速查找,避免 O(n²) 的 .some() 嵌套循环
+    const amountMap = new Map<string, number>();
+    for (const [tag, amount] of rawTagAmounts) {
+      amountMap.set(tag, amount);
+    }
+
+    const sortedTagAmounts = Array.from(rawTagAmounts).sort(([a], [b]) => a.localeCompare(b));
     const root: Tag = {
       key: "",
       text: "",
       amount: 0,
       subTags: [],
     };
+
+    // 缓存每个路径节点,避免内层 subTags 数组线性查找
+    const nodeByPath = new Map<string, Tag>();
+    nodeByPath.set("", root);
 
     for (const tagAmount of sortedTagAmounts) {
       const subtags = tagAmount[0].split("/");
@@ -33,33 +49,20 @@ const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
 
       for (let i = 0; i < subtags.length; i++) {
         const key = subtags[i];
-        let amount: number = 0;
+        tagText = i === 0 ? key : `${tagText}/${key}`;
 
-        if (i === 0) {
-          tagText += key;
-        } else {
-          tagText += "/" + key;
-        }
-        if (sortedTagAmounts.some(([tag, amount]) => tag === tagText && amount > 1)) {
-          amount = tagAmount[1];
-        }
-
-        let obj = null;
-
-        for (const t of tempObj.subTags) {
-          if (t.text === tagText) {
-            obj = t;
-            break;
-          }
-        }
-
+        let obj = nodeByPath.get(tagText);
         if (!obj) {
+          // 仅当此路径在 amountMap 中存在且数量 > 1 时显示数量
+          const storedAmount = amountMap.get(tagText);
+          const amount = storedAmount !== undefined && storedAmount > 1 ? tagAmount[1] : 0;
           obj = {
             key,
             text: tagText,
-            amount: amount,
+            amount,
             subTags: [],
           };
+          nodeByPath.set(tagText, obj);
           tempObj.subTags.push(obj);
         }
 
@@ -68,13 +71,26 @@ const TagTree = ({ tagAmounts: rawTagAmounts, expandSubTags }: Props) => {
     }
 
     setTags(root.subTags as Tag[]);
+    setRootLimit(TREE_ROOT_PAGE_SIZE);
   }, [rawTagAmounts]);
+
+  const visibleRootTags = tags.slice(0, rootLimit);
+  const remainingCount = tags.length - rootLimit;
 
   return (
     <div className="flex flex-col justify-start items-start relative w-full h-auto flex-nowrap gap-2 mt-1">
-      {tags.map((t, idx) => (
+      {visibleRootTags.map((t, idx) => (
         <TagItemContainer key={t.text + "-" + idx} tag={t} expandSubTags={expandSubTags} />
       ))}
+      {remainingCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setRootLimit((n) => n + TREE_ROOT_PAGE_SIZE)}
+          className="w-full text-xs text-muted-foreground hover:text-foreground border border-dashed border-border rounded-md py-1 transition-colors hover:bg-accent"
+        >
+          {t("common.expand")} (+{Math.min(TREE_ROOT_PAGE_SIZE, remainingCount)} / {remainingCount})
+        </button>
+      )}
     </div>
   );
 };
