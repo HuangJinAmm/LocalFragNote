@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { SettingsIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslate } from "@/utils/i18n";
 import {
@@ -14,20 +13,26 @@ import type { ProviderConfig } from "./types";
 const STORAGE_KEY = "ai_chat.active_provider";
 
 interface AiChatProviderPickerProps {
-  onOpenSettings: () => void;
   onProviderChange: (id: string | null) => void;
+  /// 外部递增的刷新信号:值变化时重新加载 provider 列表。
+  /// 用于在 AiChatSettings 保存后通知 picker 刷新,而无需关闭面板重开。
+  refreshKey?: number;
 }
 
-export function AiChatProviderPicker({ onOpenSettings, onProviderChange }: AiChatProviderPickerProps) {
+export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatProviderPickerProps) {
   const t = useTranslate();
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
 
+  // 加载 provider 列表;refreshKey 变化时重新拉取(设置保存后触发)。
+  // onProviderChange 用 ref 持有以避免它成为 useEffect 依赖造成循环重载。
   useEffect(() => {
+    let cancelled = false;
     invoke<ProviderConfig[]>("list_providers")
       .then((list) => {
+        if (cancelled) return;
         setProviders(list);
-        // 从 localStorage 恢复选择，若不存在则选第一个
+        // 从 localStorage 恢复选择,若不存在则选第一个
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved && list.some((p) => p.id === saved)) {
           setSelected(saved);
@@ -41,16 +46,17 @@ export function AiChatProviderPicker({ onOpenSettings, onProviderChange }: AiCha
         }
       })
       .catch(() => {
+        if (cancelled) return;
         setSelected(null);
         onProviderChange(null);
       });
-  }, [onProviderChange]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const handleChange = (value: string) => {
-    if (value === "__settings__") {
-      onOpenSettings();
-      return;
-    }
     setSelected(value);
     localStorage.setItem(STORAGE_KEY, value);
     onProviderChange(value);
@@ -72,10 +78,6 @@ export function AiChatProviderPicker({ onOpenSettings, onProviderChange }: AiCha
             {p.name}
           </SelectItem>
         ))}
-        <SelectItem value="__settings__">
-          <SettingsIcon className="size-3.5" />
-          {t("aiChat.settings")}
-        </SelectItem>
       </SelectContent>
     </Select>
   );
