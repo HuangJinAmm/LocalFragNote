@@ -52,6 +52,9 @@ export function AiChatPanel() {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [providerId, setProviderId] = useState<string | null>(null);
+  // provider 列表刷新信号:设置保存后递增,触发 picker 重新拉取列表。
+  // 解决"添加 provider 后下拉不显示,需关闭面板重开"的问题。
+  const [providerRefreshKey, setProviderRefreshKey] = useState(0);
   const [position, setPosition] = useState<Position>(() => loadPosition());
   const { messages, isStreaming, send, abort } = useAiChat({ providerId });
 
@@ -177,8 +180,8 @@ export function AiChatPanel() {
                 <span className="font-medium text-sm">{t("aiChat.title")}</span>
               </div>
               <AiChatProviderPicker
-                onOpenSettings={() => setSettingsOpen(true)}
                 onProviderChange={setProviderId}
+                refreshKey={providerRefreshKey}
               />
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -227,7 +230,8 @@ export function AiChatPanel() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         onSaved={() => {
-          // picker 的 useEffect 会在重新挂载时重新加载
+          // 触发 picker 重新拉取 provider 列表,让新增/编辑/删除立即反映到下拉。
+          setProviderRefreshKey((k) => k + 1);
         }}
       />
     </>

@@ -238,6 +238,155 @@ function parseOrderBy(orderBy: string): Record<string, unknown> {
   return r;
 }
 
+// ============ CEL → MemoFilter[] 解析 ============
+//
+// 把 CEL 过滤表达式解析回结构化 MemoFilter[],与 useMemoFilters 的生成逻辑互为逆运算。
+// 用于"添加过滤器"弹窗中 CEL 模式:用户粘贴/输入 CEL 表达式后转为可编辑的过滤器列表。
+//
+// 支持的语法(与 parseFilter / useMemoFilters 一致):
+//   fts.match("xxx")             → contentSearch (按空格拆分为多个词)
+//   semantic.search("xxx")       → semanticSearch
+//   tag in ["a", "b"]            → tagSearch × N
+//   visibility in ["PUBLIC"]     → visibility × N
+//   created_ts >= timestamp(N)
+//     && created_ts < timestamp(N+86400)  → displayTime(当天 0 点的 ISO 日期)
+//   created_ts >= timestamp(N)   → fromDate(ISO 日期)
+//   pinned                       → pinned
+//   has_link / has_task_list / has_code → property.hasLink / hasTaskList / hasCode
+//   content.contains("xxx")      → contentSearch(向后兼容)
+
+export interface ParsedCelFilter {
+  filters: MemoFilterLike[];
+  /// 解析过程中无法识别的原始条件片段(供 UI 提示用户)
+  unrecognized: string[];
+}
+
+interface MemoFilterLike {
+  factor: string;
+  value: string;
+}
+
+/// 将 CEL 表达式按顶层 `&&` 拆分为独立条件。
+/// 注意:当前 CEL 子集中括号内不会出现 &&,所以简单 split 即可;
+/// 若未来语法扩展,需改为栈式扫描。
+function splitCelConditions(cel: string): string[] {
+  return cel
+    .split(/\s*&&\s*/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/// 解析双引号包裹的字符串字面量列表:["a", "b"] → ["a", "b"]
+function parseStringList(listContent: string): string[] {
+  return (listContent.match(/"((?:[^"\\]|\\.)*)"/g) || []).map((s) => s.slice(1, -1).replace(/\\"/g, '"'));
+}
+
+/// 解析单个双引号字符串字面量
+function parseStringLiteral(content: string): string | null {
+  const m = content.match(/^"((?:[^"\\]|\\.)*)"$/);
+  return m ? m[1].replace(/\\"/g, '"') : null;
+}
+
+/// 解析 created_ts 时间戳范围,返回 ISO 日期字符串(本地时区)
+function timestampToLocalDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function parseCelToFilters(cel: string): ParsedCelFilter {
+  const filters: MemoFilterLike[] = [];
+  const unrecognized: string[] = [];
+  if (!cel?.trim()) return { filters, unrecognized };
+
+  const conditions = splitCelConditions(cel);
+  // 先收集 created_ts 上下界,处理完整后再决定 displayTime / fromDate
+  let tsAfter: number | null = null;
+  let tsBefore: number | null = null;
+  const usedIndices = new Set<number>();
+
+  conditions.forEach((cond, idx) => {
+    // created_ts >= timestamp(N)
+    let m = cond.match(/^created_ts\s*>=\s*timestamp\((\d+)\)$/);
+    if (m) {
+      tsAfter = parseInt(m[1], 10);
+      usedIndices.add(idx);
+      return;
+    }
+    // created_ts < timestamp(N)
+    m = cond.match(/^created_ts\s*<\s*timestamp\((\d+)\)$/);
+    if (m) {
+      tsBefore = parseInt(m[1], 10);
+      usedIndices.add(idx);
+      return;
+    }
+  });
+
+  // 时间范围:若 after + before 间隔恰好是一天 → displayTime;仅 after → fromDate
+  if (tsAfter !== null && tsBefore !== null && tsBefore - tsAfter === 86400) {
+    filters.push({ factor: "displayTime", value: timestampToLocalDate(tsAfter) });
+  } else if (tsAfter !== null) {
+    filters.push({ factor: "fromDate", value: timestampToLocalDate(tsAfter) });
+  }
+
+  conditions.forEach((cond, idx) => {
+    if (usedIndices.has(idx)) return;
+
+    // fts.match("xxx")
+    let m = cond.match(/^fts\.match\((.*)\)$/);
+    if (m) {
+      const q = parseStringLiteral(m[1]);
+      if (q !== null) {
+        // 与 useMemoFilters 聚合逻辑对应:空格分词 → 多个 contentSearch
+        q.split(/\s+/).filter((w) => w.length > 0).forEach((w) => filters.push({ factor: "contentSearch", value: w }));
+      }
+      return;
+    }
+
+    // semantic.search("xxx")
+    m = cond.match(/^semantic\.search\((.*)\)$/);
+    if (m) {
+      const q = parseStringLiteral(m[1]);
+      if (q !== null) filters.push({ factor: "semanticSearch", value: q });
+      return;
+    }
+
+    // content.contains("xxx") — 向后兼容
+    m = cond.match(/^content\.contains\((.*)\)$/);
+    if (m) {
+      const q = parseStringLiteral(m[1]);
+      if (q !== null) filters.push({ factor: "contentSearch", value: q });
+      return;
+    }
+
+    // tag in ["a", "b"]
+    m = cond.match(/^tag\s+in\s+\[([^\]]+)\]$/);
+    if (m) {
+      parseStringList(m[1]).forEach((tag) => filters.push({ factor: "tagSearch", value: tag }));
+      return;
+    }
+
+    // visibility in ["PUBLIC", "PROTECTED"]
+    m = cond.match(/^visibility\s+in\s+\[([^\]]+)\]$/);
+    if (m) {
+      parseStringList(m[1]).forEach((v) => filters.push({ factor: "visibility", value: v }));
+      return;
+    }
+
+    // pinned / has_link / has_task_list / has_code — 标志位
+    if (/^pinned$/.test(cond)) { filters.push({ factor: "pinned", value: "" }); return; }
+    if (/^has_link$/.test(cond)) { filters.push({ factor: "property.hasLink", value: "" }); return; }
+    if (/^has_task_list$/.test(cond)) { filters.push({ factor: "property.hasTaskList", value: "" }); return; }
+    if (/^has_code$/.test(cond)) { filters.push({ factor: "property.hasCode", value: "" }); return; }
+
+    unrecognized.push(cond);
+  });
+
+  return { filters, unrecognized };
+}
+
 // ============ Memo Service 适配 ============
 
 export const memoServiceClient = {

@@ -386,7 +386,7 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
   const handleTagConfirm = (selectedTags: string[]) => {
     const state = getState();
     const tagString = selectedTags.map((tag) => `#${tag}`).join(" ");
-    const newContent = tagString ? `${state.content}\n\n${tagString}` : state.content;
+    const newContent = tagString ? `${tagString}\n\n${state.content}` : state.content;
     setTagDialog({ open: false, loading: false, suggested: [], existing: [] });
     void doSave(newContent);
   };

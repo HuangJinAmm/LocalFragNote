@@ -1,0 +1,63 @@
+:root {
+  /* ==========================================================================
+     科幻风格主题 (Sci-Fi)
+     设计理念:深邃太空蓝黑底色,霓虹青色为主色,紫色为辅,高对比发光感。
+     营造赛博朋克/未来终端氛围,同时保证文字可读性。
+     ========================================================================== */
+
+  /* Surfaces - 深空蓝黑层次,模拟太空舱面板 */
+  --background: oklch(0.18 0.02 260);
+  --foreground: oklch(0.92 0.015 200);
+
+  --card: oklch(0.22 0.025 260);
+  --card-foreground: oklch(0.92 0.015 200);
+
+  --popover: oklch(0.25 0.03 260);
+  --popover-foreground: oklch(0.94 0.015 200);
+
+  /* Primary - 霓虹青,用于选中态/链接/聚焦控件,带发光感 */
+  --primary: oklch(0.78 0.15 195);
+  --primary-foreground: oklch(0.16 0.03 260);
+
+  /* Secondary - 略亮的深蓝,用于次要按钮 */
+  --secondary: oklch(0.28 0.03 260);
+  --secondary-foreground: oklch(0.88 0.015 200);
+
+  /* Muted - 内联背景(代码、骨架、元数据) */
+  --muted: oklch(0.3 0.03 260);
+  --muted-foreground: oklch(0.7 0.018 200);
+
+  /* Accent - 悬停态,带紫色调增强科幻感 */
+  --accent: oklch(0.35 0.05 280);
+  --accent-foreground: oklch(0.94 0.015 200);
+
+  /* Destructive - 警示红,在深色背景上明亮可见 */
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.98 0.005 260);
+
+  /* Feedback - success 用霓虹绿,warning 用霓虹黄,贴合科幻调性 */
+  --success: oklch(0.75 0.17 155);
+  --success-foreground: oklch(0.18 0.03 155);
+  --warning: oklch(0.82 0.15 85);
+  --warning-foreground: oklch(0.2 0.03 85);
+
+  /* Borders - 蓝紫调分隔线,input 略亮便于识别 */
+  --border: oklch(0.33 0.03 265);
+  --input: oklch(0.38 0.035 265);
+  --ring: oklch(0.78 0.15 195);
+
+  /* Sidebar - 比主背景更深的太空黑蓝 */
+  --sidebar: oklch(0.15 0.02 260);
+  --sidebar-foreground: oklch(0.74 0.018 200);
+  --sidebar-accent: oklch(0.28 0.04 280);
+  --sidebar-accent-foreground: oklch(0.92 0.015 200);
+
+  /* Shadows - 冷调深影,增强立体感 */
+  --shadow-xs: 0 1px 3px 0px hsl(260 30% 5% / 0.5);
+  --shadow-sm: 0 1px 3px 0px hsl(260 30% 5% / 0.6), 0 1px 2px -1px hsl(260 30% 5% / 0.6);
+  --shadow: 0 1px 3px 0px hsl(260 30% 5% / 0.6), 0 1px 2px -1px hsl(260 30% 5% / 0.6);
+  --shadow-md: 0 1px 3px 0px hsl(260 30% 5% / 0.6), 0 2px 4px -1px hsl(260 30% 5% / 0.6);
+  --shadow-lg: 0 1px 3px 0px hsl(260 30% 5% / 0.6), 0 4px 6px -1px hsl(260 30% 5% / 0.6);
+  --shadow-xl: 0 1px 3px 0px hsl(260 30% 5% / 0.6), 0 8px 10px -1px hsl(260 30% 5% / 0.6);
+  --shadow-2xl: 0 1px 3px 0px hsl(260 30% 5% / 0.8);
+}

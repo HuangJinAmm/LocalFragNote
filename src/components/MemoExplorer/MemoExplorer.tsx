@@ -3,8 +3,8 @@ import useCurrentUser from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
 import type { StatisticsData } from "@/types/statistics";
 import StatisticsView from "../StatisticsView";
+import FiltersSection from "./FiltersSection";
 import ShortcutsSection from "./ShortcutsSection";
-import TagPresetsSection from "./TagPresetsSection";
 import TagsSection from "./TagsSection";
 
 export type MemoExplorerContext = "home" | "explore" | "archived" | "profile";
@@ -80,7 +80,7 @@ const MemoExplorer = (props: Props) => {
         {features.statistics && <StatisticsView statisticsData={statisticsData} />}
         {features.shortcuts && currentUser && <ShortcutsSection />}
         {features.tags && <TagsSection readonly={context === "explore"} tagCount={tagCount} />}
-        {features.tags && <TagPresetsSection />}
+        {features.tags && <FiltersSection />}
       </div>
     </aside>
   );

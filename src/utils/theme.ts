@@ -1,11 +1,13 @@
 import defaultDarkThemeContent from "../themes/default-dark.css?raw";
+import greenThemeContent from "../themes/green.css?raw";
 import paperThemeContent from "../themes/paper.css?raw";
+import sciFiThemeContent from "../themes/sci-fi.css?raw";
 
 // ============================================================================
 // Types and Constants
 // ============================================================================
 
-const VALID_THEMES = ["system", "default", "default-dark", "paper"] as const;
+const VALID_THEMES = ["system", "default", "default-dark", "paper", "green", "sci-fi"] as const;
 
 export type Theme = (typeof VALID_THEMES)[number];
 export type ResolvedTheme = Exclude<Theme, "system">;
@@ -22,19 +24,29 @@ const THEME_CONTENT: Record<ResolvedTheme, string | null> = {
   default: null,
   "default-dark": defaultDarkThemeContent,
   paper: paperThemeContent,
+  green: greenThemeContent,
+  "sci-fi": sciFiThemeContent,
 };
 
 const THEME_COLORS: Record<ResolvedTheme, string> = {
   default: "#faf9f5",
   "default-dark": "#1d1f23",
   paper: "#f5ede4",
+  green: "#eef0e6",
+  "sci-fi": "#1a1d2e",
 };
+
+/// 深色主题集合:用于 colorScheme 切换与系统主题检测。
+/// 注意 sci-fi 主题虽不以 -dark 结尾,但是深色背景,需显式列入。
+const DARK_THEME_SET: ReadonlySet<ResolvedTheme> = new Set<ResolvedTheme>(["default-dark", "sci-fi"]);
 
 export const THEME_OPTIONS: ThemeOption[] = [
   { value: "system", label: "Sync with system" },
   { value: "default", label: "Light" },
   { value: "default-dark", label: "Dark" },
   { value: "paper", label: "Paper" },
+  { value: "green", label: "Green" },
+  { value: "sci-fi", label: "Sci-Fi" },
 ];
 
 // ============================================================================
@@ -183,7 +195,7 @@ const updateThemeColorMeta = (theme: ResolvedTheme): void => {
 };
 
 const isDarkTheme = (theme: ResolvedTheme): boolean => {
-  return theme.endsWith("-dark") || theme.endsWith(".dark");
+  return DARK_THEME_SET.has(theme);
 };
 
 /**
