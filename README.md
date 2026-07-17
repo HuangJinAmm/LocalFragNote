@@ -1,11 +1,7 @@
 # 破碎星球（LocalFragNote）
 
-> 一款本地优先（local-first）的 Markdown 笔记应用，基于 Tauri 2 + React 19 + Rust 构建，所有数据均存放在用户本机目录，支持全文 / 语义搜索、附件管理、FSRS 复习、AI 聊天与局域网发现分享。
+> 一款参考Memos项目，本地优先（local-first）的 Markdown 笔记应用，基于 Tauri 2 + React 19 + Rust 构建，所有数据均存放在用户本机目录，支持全文 / 语义搜索、附件管理、FSRS 复习、AI 聊天与局域网发现分享。
 
-- **应用名称**：破碎星球
-- **应用标识**：`com.hj.localfragnote`
-- **当前版本**：0.1.0
-- **许可证**：MIT
 
 ---
 

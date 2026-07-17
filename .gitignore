@@ -11,3 +11,5 @@ src-tauri/lib/
 Cargo.lock
 package-lock.json
 yarn.lock
+
+.VSCodeCounter/

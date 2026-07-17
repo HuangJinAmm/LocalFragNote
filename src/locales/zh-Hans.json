@@ -312,7 +312,7 @@
     "oldest-first": "最早优先",
     "order": "顺序",
     "order-by": "排序",
-    "search-placeholder": "搜索备忘录（支持 tag: from: has: is: 语法）",
+    "search-placeholder": "搜索备忘录",
     "search-placeholder-semantic": "按语义搜索...",
     "search-mode-tooltip": "切换搜索模式",
     "search-mode-keyword": "关键词搜索",
