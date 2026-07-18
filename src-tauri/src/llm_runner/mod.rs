@@ -8,5 +8,8 @@
 pub mod config;
 pub mod runner;
 
-pub use config::{load_config, save_config, LlmRunnerConfig};
+pub use config::{
+    default_base_url, effective_base_url, load_config, save_config, LlmRunnerConfig,
+    RUNNER_TYPE_LMS,
+};
 pub use runner::{LlmRunnerError, LlmRunnerState, LlmRunnerStatus};

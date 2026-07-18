@@ -31,6 +31,19 @@ export interface ChatMessage {
   isToolCall?: boolean;
   /** 错误标记 */
   isError?: boolean;
+  /** tool 消息的关联 id（OpenAI tool_call_id） */
+  toolCallId?: string;
+  /** 助手消息触发的工具调用列表（用于回传给模型） */
+  toolCalls?: ToolCallInfo[];
+  /** tool 消息携带的工具执行结果（用于回传给模型） */
+  toolResult?: unknown;
+}
+
+/// 助手消息中的工具调用信息
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  args: unknown;
 }
 
 /// 发送给后端的消息格式
@@ -51,6 +64,8 @@ export interface ToolPayload {
   run_id: number;
   name: string;
   args: unknown;
+  tool_call_id: string;
+  result: unknown;
 }
 
 export interface DonePayload {

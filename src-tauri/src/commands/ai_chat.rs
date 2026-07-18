@@ -56,6 +56,8 @@ struct ToolPayload {
     run_id: u32,
     name: String,
     args: Value,
+    tool_call_id: String,
+    result: Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -233,11 +235,6 @@ fn agent_loop(
                 cleanup_abort(run_id);
                 return;
             }
-            let _ = app.emit("ai:tool", ToolPayload {
-                run_id,
-                name: tc.name.clone(),
-                args: serde_json::from_str(&tc.arguments).unwrap_or(Value::Null),
-            });
 
             let args: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Null);
             let result = {
@@ -248,6 +245,14 @@ fn agent_loop(
                 Ok(v) => v,
                 Err(e) => json!({ "error": e.to_string() }),
             };
+            // 工具执行完成后发送事件，携带结果，供前端持久化并随下次请求回传给模型
+            let _ = app.emit("ai:tool", ToolPayload {
+                run_id,
+                name: tc.name.clone(),
+                args: args.clone(),
+                tool_call_id: tc.id.clone(),
+                result: result.clone(),
+            });
             msgs.push(json!({
                 "role": "tool",
                 "tool_call_id": tc.id,

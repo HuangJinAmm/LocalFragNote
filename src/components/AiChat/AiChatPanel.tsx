@@ -1,4 +1,4 @@
-import { BotIcon, SettingsIcon, XIcon } from "lucide-react";
+import { BotIcon, PlusIcon, SettingsIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/utils/i18n";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ export function AiChatPanel() {
   // 解决"添加 provider 后下拉不显示,需关闭面板重开"的问题。
   const [providerRefreshKey, setProviderRefreshKey] = useState(0);
   const [position, setPosition] = useState<Position>(() => loadPosition());
-  const { messages, isStreaming, send, abort } = useAiChat({ providerId });
+  const { messages, isStreaming, send, abort, clear } = useAiChat({ providerId });
 
   // 保持 send 的最新引用，供模块级控制器调用
   const sendRef = useRef(send);
@@ -183,6 +183,14 @@ export function AiChatPanel() {
                 onProviderChange={setProviderId}
                 refreshKey={providerRefreshKey}
               />
+              <button
+                onClick={clear}
+                disabled={isStreaming || messages.length === 0}
+                className="size-7 rounded-md hover:bg-muted flex items-center justify-center disabled:opacity-40 disabled:hover:bg-transparent"
+                aria-label={t("aiChat.newChat")}
+              >
+                <PlusIcon className="size-3.5" />
+              </button>
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="size-7 rounded-md hover:bg-muted flex items-center justify-center"

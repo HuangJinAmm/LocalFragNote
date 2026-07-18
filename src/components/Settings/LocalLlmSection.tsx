@@ -40,6 +40,7 @@ interface LlmRunnerConfig {
   context_size: number;
   gpu_layers: number;
   extra_args: string;
+  base_url: string;
   auto_start: boolean;
 }
 
@@ -69,7 +70,27 @@ const DEFAULT_CONFIG: LlmRunnerConfig = {
   context_size: 4096,
   gpu_layers: 0,
   extra_args: "",
+  base_url: "",
   auto_start: false,
+};
+
+/** 按 runner 类型派生默认 Base URL（与后端 default_base_url 保持一致） */
+const deriveDefaultBaseUrl = (config: LlmRunnerConfig): string => {
+  const port = config.port || 8080;
+  if (config.runner_type === "lms") {
+    return `http://127.0.0.1:${port}/v1`;
+  }
+  const host = config.host.trim() || "127.0.0.1";
+  return `http://${host}:${port}/v1`;
+};
+
+/** 返回有效的 Base URL：优先使用用户配置的 base_url，为空时回退到派生默认值 */
+const effectiveBaseUrl = (config: LlmRunnerConfig): string => {
+  const trimmed = config.base_url.trim();
+  if (trimmed) {
+    return trimmed.replace(/\/+$/, "");
+  }
+  return deriveDefaultBaseUrl(config);
 };
 
 const RUNNER_TYPES = [
@@ -213,7 +234,7 @@ const LocalLlmSection = () => {
   };
 
   const handleCopyUrl = async () => {
-    const url = status?.base_url ?? `http://${config.host}:${config.port}/v1`;
+    const url = effectiveBaseUrl(config);
     try {
       await navigator.clipboard.writeText(url);
       toast.success(t("setting.local-llm.url-copied"));
@@ -223,7 +244,7 @@ const LocalLlmSection = () => {
   };
 
   const handleAddToProviders = async () => {
-    const baseUrl = status?.base_url ?? `http://${config.host}:${config.port}/v1`;
+    const baseUrl = effectiveBaseUrl(config);
     try {
       const existing = await invoke<ProviderConfig[]>("list_providers");
       // 已存在指向同一 baseUrl 的 provider 则提示
@@ -254,7 +275,8 @@ const LocalLlmSection = () => {
     );
   }
 
-  const baseUrl = status?.base_url ?? `http://${config.host}:${config.port}/v1`;
+  // 服务运行中时显示后端实际返回的 base_url，否则显示按当前配置派生的 base_url
+  const baseUrl = running && status?.base_url ? status.base_url : effectiveBaseUrl(config);
 
   return (
     <SettingSection
@@ -468,12 +490,20 @@ const LocalLlmSection = () => {
         showSeparator
       >
         <SettingList>
-          <SettingListItem label={t("setting.local-llm.host")} description={t("setting.local-llm.host-hint")}>
+          <SettingListItem
+            label={t("setting.local-llm.host")}
+            description={
+              isLms
+                ? t("setting.local-llm.host-hint-lms")
+                : t("setting.local-llm.host-hint")
+            }
+          >
             <Input
               className="w-40 font-mono"
               value={config.host}
               onChange={(e) => update({ host: e.target.value })}
               placeholder="127.0.0.1"
+              disabled={isLms}
             />
           </SettingListItem>
           <SettingListItem label={t("setting.local-llm.port")} description={t("setting.local-llm.port-hint")}>
@@ -484,6 +514,17 @@ const LocalLlmSection = () => {
               max={65535}
               value={config.port}
               onChange={(e) => update({ port: Math.max(1, Math.min(65535, Number(e.target.value) || 8080)) })}
+            />
+          </SettingListItem>
+          <SettingListItem
+            label={t("setting.local-llm.base-url-override")}
+            description={t("setting.local-llm.base-url-override-hint")}
+          >
+            <Input
+              className="w-72 font-mono"
+              value={config.base_url}
+              onChange={(e) => update({ base_url: e.target.value })}
+              placeholder={deriveDefaultBaseUrl(config)}
             />
           </SettingListItem>
         </SettingList>

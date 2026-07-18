@@ -4,7 +4,8 @@
 
 use crate::error::{IpcError, IpcResult};
 use crate::llm_runner::{
-    self, load_config, save_config, LlmRunnerConfig, LlmRunnerState, LlmRunnerStatus,
+    self, effective_base_url, load_config, save_config, LlmRunnerConfig, LlmRunnerState,
+    LlmRunnerStatus, RUNNER_TYPE_LMS,
 };
 use crate::state::AppState;
 use std::sync::Arc;
@@ -30,7 +31,9 @@ pub fn llm_update_config(
     if req.executable_path.trim().is_empty() {
         return Err(IpcError::BadRequest("可执行文件路径不能为空".into()));
     }
-    if req.host.trim().is_empty() {
+    // lms 模式下 host 由 LM Studio 守护进程决定（lms server start 不支持 --host），
+    // 不强制要求；llama-cpp 等前台模式必须指定 host
+    if req.runner_type != RUNNER_TYPE_LMS && req.host.trim().is_empty() {
         return Err(IpcError::BadRequest("监听 host 不能为空".into()));
     }
     if req.port == 0 {
@@ -136,7 +139,7 @@ pub async fn llm_test_connection(
         None => {
             let store = state.store();
             let cfg = load_config(&store);
-            format!("http://{}:{}/v1", cfg.host, cfg.port)
+            effective_base_url(&cfg)
         }
     };
     let url = format!("{}/models", base_url.trim_end_matches('/'));
@@ -198,7 +201,7 @@ fn stopped_status(cfg: LlmRunnerConfig) -> LlmRunnerStatus {
     LlmRunnerStatus {
         running: false,
         pid: None,
-        base_url: format!("http://{}:{}/v1", cfg.host, cfg.port),
+        base_url: effective_base_url(&cfg),
         started_at: None,
         last_error: None,
         recent_logs: Vec::new(),
@@ -250,5 +253,26 @@ mod tests {
         let cfg = LlmRunnerConfig::default();
         let s = stopped_status(cfg);
         assert_eq!(s.base_url, "http://127.0.0.1:8080/v1");
+    }
+
+    #[test]
+    fn test_stopped_status_lms_ignores_host() {
+        let mut cfg = LlmRunnerConfig::default();
+        cfg.runner_type = RUNNER_TYPE_LMS.to_string();
+        cfg.host = "0.0.0.0".to_string(); // lms 模式下 host 不影响 base url
+        cfg.port = 1234;
+        let s = stopped_status(cfg);
+        assert_eq!(s.base_url, "http://127.0.0.1:1234/v1");
+    }
+
+    #[test]
+    fn test_stopped_status_uses_base_url_override() {
+        let mut cfg = LlmRunnerConfig::default();
+        cfg.runner_type = RUNNER_TYPE_LMS.to_string();
+        cfg.port = 1234;
+        cfg.base_url = "http://10.0.0.5:8080/v1/".to_string();
+        let s = stopped_status(cfg);
+        // override 优先，尾部斜杠被去除
+        assert_eq!(s.base_url, "http://10.0.0.5:8080/v1");
     }
 }

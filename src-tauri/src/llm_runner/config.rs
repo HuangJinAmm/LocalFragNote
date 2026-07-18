@@ -15,7 +15,8 @@ pub const CONFIG_KEY: &str = "llm_runner_config";
 /// - `runner_type = "llama-cpp"`：前台长驻进程（如 `llama-server`、`llamafile`、`vllm` 等）
 ///   生命周期由本模块直接管理：spawn 后跟踪 PID，stop 时 kill 子进程
 /// - `runner_type = "lms"`：守护模式（LM Studio CLI）
-///   `lms server start` 会立即返回，模型由 LM Studio 后台守护进程加载
+///   `lms server start` 会立即返回，再调用 `lms load <model>` 加载模型，
+///   模型由 LM Studio 后台守护进程管理
 ///   stop 时调用 `lms server stop`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmRunnerConfig {
@@ -51,6 +52,14 @@ pub struct LlmRunnerConfig {
     #[serde(default)]
     pub extra_args: String,
 
+    /// 自定义 Base URL（OpenAI 兼容端点）。
+    /// 留空表示按 runner 类型派生默认值：
+    /// - `llama-cpp`：`http://{host}:{port}/v1`
+    /// - `lms`：`http://127.0.0.1:{port}/v1`（lms server start 不支持 --host，
+    ///   监听地址由 LM Studio 守护进程决定）
+    #[serde(default)]
+    pub base_url: String,
+
     /// 是否在应用启动时自动启动
     #[serde(default)]
     pub auto_start: bool,
@@ -83,8 +92,31 @@ impl Default for LlmRunnerConfig {
             context_size: default_context_size(),
             gpu_layers: 0,
             extra_args: String::new(),
+            base_url: String::new(),
             auto_start: false,
         }
+    }
+}
+
+/// 根据 runner 类型派生默认 Base URL。
+/// - `llama-cpp`：`http://{host}:{port}/v1`
+/// - `lms`：`http://127.0.0.1:{port}/v1`（lms server start 不支持 --host）
+///
+/// 若 `config.base_url` 非空，调用方应优先使用该字段而非本函数。
+pub fn default_base_url(config: &LlmRunnerConfig) -> String {
+    match config.runner_type.as_str() {
+        RUNNER_TYPE_LMS => format!("http://127.0.0.1:{}/v1", config.port),
+        _ => format!("http://{}:{}/v1", config.host, config.port),
+    }
+}
+
+/// 返回有效的 Base URL：优先使用用户配置的 `base_url`，为空时回退到按 runner 类型派生的默认值。
+pub fn effective_base_url(config: &LlmRunnerConfig) -> String {
+    let trimmed = config.base_url.trim();
+    if !trimmed.is_empty() {
+        trimmed.trim_end_matches('/').to_string()
+    } else {
+        default_base_url(config)
     }
 }
 
@@ -127,6 +159,7 @@ mod tests {
         assert_eq!(c.gpu_layers, 0);
         assert!(!c.auto_start);
         assert!(c.model_path.is_empty());
+        assert!(c.base_url.is_empty());
     }
 
     #[test]
@@ -140,6 +173,7 @@ mod tests {
             context_size: 8192,
             gpu_layers: 99,
             extra_args: "--verbose --jinja".to_string(),
+            base_url: "http://192.168.1.10:1234/v1".to_string(),
             auto_start: true,
         };
         let json = serde_json::to_string(&c).unwrap();
@@ -152,12 +186,13 @@ mod tests {
         assert_eq!(c.context_size, back.context_size);
         assert_eq!(c.gpu_layers, back.gpu_layers);
         assert_eq!(c.extra_args, back.extra_args);
+        assert_eq!(c.base_url, back.base_url);
         assert_eq!(c.auto_start, back.auto_start);
     }
 
     #[test]
     fn test_partial_json_uses_defaults() {
-        // 缺失字段应使用 serde default 函数
+        // 缺失字段应使用 serde default 函数（包括 base_url 默认为空）
         let json = r#"{"model_path":"/models/test.gguf","port":9999}"#;
         let c: LlmRunnerConfig = serde_json::from_str(json).unwrap();
         assert_eq!(c.model_path, "/models/test.gguf");
@@ -166,6 +201,7 @@ mod tests {
         assert_eq!(c.host, "127.0.0.1"); // 默认
         assert_eq!(c.context_size, 4096); // 默认
         assert_eq!(c.executable_path, "llama-server"); // 默认
+        assert!(c.base_url.is_empty()); // 默认
     }
 
     #[test]
@@ -184,12 +220,14 @@ mod tests {
         c.model_path = "/models/test.gguf".to_string();
         c.gpu_layers = 33;
         c.auto_start = true;
+        c.base_url = "http://example.com:9999/v1".to_string();
         save_config(&store, &c).unwrap();
         let loaded = load_config(&store);
         assert_eq!(loaded.port, 9999);
         assert_eq!(loaded.model_path, "/models/test.gguf");
         assert_eq!(loaded.gpu_layers, 33);
         assert!(loaded.auto_start);
+        assert_eq!(loaded.base_url, "http://example.com:9999/v1");
     }
 
     #[test]
@@ -198,5 +236,41 @@ mod tests {
         assert!(!is_daemon_runner(&c));
         c.runner_type = RUNNER_TYPE_LMS.to_string();
         assert!(is_daemon_runner(&c));
+    }
+
+    #[test]
+    fn test_default_base_url_llama_cpp() {
+        let mut c = LlmRunnerConfig::default();
+        c.host = "0.0.0.0".to_string();
+        c.port = 9999;
+        assert_eq!(default_base_url(&c), "http://0.0.0.0:9999/v1");
+    }
+
+    #[test]
+    fn test_default_base_url_lms_ignores_host() {
+        let mut c = LlmRunnerConfig::default();
+        c.runner_type = RUNNER_TYPE_LMS.to_string();
+        c.host = "0.0.0.0".to_string(); // lms 模式下 host 不影响 base url
+        c.port = 1234;
+        assert_eq!(default_base_url(&c), "http://127.0.0.1:1234/v1");
+    }
+
+    #[test]
+    fn test_effective_base_url_uses_override() {
+        let mut c = LlmRunnerConfig::default();
+        c.runner_type = RUNNER_TYPE_LMS.to_string();
+        c.port = 1234;
+        c.base_url = "http://10.0.0.5:8080/v1/".to_string();
+        // override 优先，尾部斜杠被去除
+        assert_eq!(effective_base_url(&c), "http://10.0.0.5:8080/v1");
+    }
+
+    #[test]
+    fn test_effective_base_url_falls_back_to_default() {
+        let mut c = LlmRunnerConfig::default();
+        c.runner_type = RUNNER_TYPE_LMS.to_string();
+        c.port = 1234;
+        c.base_url = "   ".to_string(); // 空白视为未设置
+        assert_eq!(effective_base_url(&c), "http://127.0.0.1:1234/v1");
     }
 }

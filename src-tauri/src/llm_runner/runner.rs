@@ -2,8 +2,8 @@
 //!
 //! 两种生命周期模型：
 //! - 前台模式（`llama-cpp`）：spawn 长驻子进程，跟踪 PID，stop 时 kill 子进程
-//! - 守护模式（`lms`）：`lms server start` 立即返回，模型由 LM Studio 守护进程管理
-//!   stop 时调用 `lms server stop`；不持有子进程句柄
+//! - 守护模式（`lms`）：`lms server start` 立即返回，再调用 `lms load <model>` 加载模型
+//!   模型由 LM Studio 守护进程管理；stop 时调用 `lms server stop`；不持有子进程句柄
 
 use crate::llm_runner::config::{is_daemon_runner, LlmRunnerConfig, RUNNER_TYPE_LMS};
 use serde::Serialize;
@@ -101,9 +101,11 @@ impl LlmRunnerState {
     }
 
     /// 当前 base_url（OpenAI 兼容端点）
+    ///
+    /// 优先返回用户在配置中显式填写的 `base_url`；为空时按 runner 类型派生默认值。
     pub fn base_url(&self) -> String {
         let cfg = self.config.read().unwrap();
-        format!("http://{}:{}/v1", cfg.host, cfg.port)
+        crate::llm_runner::effective_base_url(&cfg)
     }
 
     /// 状态快照
@@ -339,12 +341,69 @@ fn start_daemon(
         return Err(LlmRunnerError::Other(msg));
     }
 
-    // lms server start 成功返回后，模型由 LM Studio 守护进程加载
+    // lms server start 成功返回后，若配置了 model_path 则调用 `lms load` 加载模型
     state.running.store(true, Ordering::SeqCst);
     *state.started_at.write().unwrap() = Some(now_epoch_secs());
     *state.last_error.write().unwrap() = None;
-    state.append_log("[info] lms server start 已返回，模型加载由 LM Studio 守护进程管理".to_string());
+    state.append_log("[info] lms server start 已返回".to_string());
     let _ = app_handle.emit("llm:status-changed", ());
+
+    if !config.model_path.trim().is_empty() {
+        if let Err(e) = load_model_after_server_start(&state, &app_handle, &config) {
+            // 模型加载失败不回滚 server start 状态，仅记录错误
+            let msg = format!("lms load 失败: {e}");
+            state.set_last_error(msg.clone());
+            state.append_log(format!("[error] {msg}"));
+            let _ = app_handle.emit("llm:status-changed", ());
+            return Err(e);
+        }
+    } else {
+        state.append_log(
+            "[info] 未配置 model_path，跳过 lms load，请通过 LM Studio 手动加载模型".to_string(),
+        );
+    }
+
+    let _ = app_handle.emit("llm:status-changed", ());
+    Ok(())
+}
+
+/// 在 `lms server start` 成功后调用 `lms load <model>` 加载指定模型
+fn load_model_after_server_start(
+    state: &Arc<LlmRunnerState>,
+    app_handle: &AppHandle,
+    config: &LlmRunnerConfig,
+) -> Result<(), LlmRunnerError> {
+    let mut cmd = Command::new(&config.executable_path);
+    cmd.arg("load").arg(&config.model_path);
+    // 附加参数透传（如 --gpu max --context-length 8192 等 lms load 支持的选项）
+    for arg in config.extra_args.split_whitespace() {
+        cmd.arg(arg);
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    tracing::info!(?cmd, "LLM 启动器: 调用 lms load 加载模型");
+    state.append_log(format!("[info] 调用 lms load {}", config.model_path));
+
+    let output = cmd.output().map_err(LlmRunnerError::Io)?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    for line in stdout.lines().chain(stderr.lines()) {
+        if !line.is_empty() {
+            state.append_log(line.to_string());
+            let _ = app_handle.emit("llm:log", line.to_string());
+        }
+    }
+
+    if !output.status.success() {
+        let msg = format!(
+            "lms load 失败 (exit={}): {stderr}",
+            output.status.code().unwrap_or(-1)
+        );
+        return Err(LlmRunnerError::Other(msg));
+    }
+
+    state.append_log("[info] lms load 已返回，模型加载由 LM Studio 守护进程管理".to_string());
     Ok(())
 }
 
@@ -357,13 +416,12 @@ fn build_command(config: &LlmRunnerConfig) -> Result<Command, LlmRunnerError> {
 
     match config.runner_type.as_str() {
         RUNNER_TYPE_LMS => {
-            // lms server start [--model <name>] --port <port> --host <host>
+            // lms server start --port <port>
+            // 注意：lms server start 不支持 --model / --host 选项：
+            //   - 模型需在 server start 成功后通过 `lms load <model>` 加载（见 start_daemon）
+            //   - 监听 host 由 LM Studio 守护进程配置决定（默认 127.0.0.1），CLI 不可改
             cmd.arg("server").arg("start");
-            if !config.model_path.trim().is_empty() {
-                cmd.arg("--model").arg(&config.model_path);
-            }
             cmd.arg("--port").arg(config.port.to_string());
-            cmd.arg("--host").arg(&config.host);
         }
         _ => {
             // llama-server [-m <model>] --port <port> --host <host> -c <ctx> [-ngl <ngl>]
@@ -408,6 +466,7 @@ mod tests {
             context_size: 4096,
             gpu_layers: 10,
             extra_args: "--verbose --jinja".to_string(),
+            base_url: String::new(),
             auto_start: false,
         }
     }
@@ -445,16 +504,21 @@ mod tests {
             .get_args()
             .map(|s| s.to_string_lossy().into_owned())
             .collect();
-        // lms server start --model X --port Y --host Z --verbose --jinja
+        // lms server start --port Y --verbose --jinja
+        // 注意：lms server start 不支持 --model / --host，模型通过 lms load 单独加载，
+        // 监听 host 由 LM Studio 守护进程决定
         assert_eq!(args[0], "server");
         assert_eq!(args[1], "start");
-        assert!(args.contains(&"--model".to_string()));
-        assert!(args.contains(&"/models/x.gguf".to_string()));
+        // lms server start 不应包含 --model / -m / --host
+        assert!(!args.contains(&"--model".to_string()));
+        assert!(!args.contains(&"-m".to_string()));
+        assert!(!args.contains(&"--host".to_string()));
         assert!(args.contains(&"--port".to_string()));
+        assert!(args.contains(&"8080".to_string()));
         // lms 模式不应包含 -c / -ngl
         assert!(!args.contains(&"-c".to_string()));
         assert!(!args.contains(&"-ngl".to_string()));
-        // 附加参数透传
+        // 附加参数透传（用于 lms load 的 --gpu / --context-length 等选项）
         assert!(args.contains(&"--verbose".to_string()));
         assert!(args.contains(&"--jinja".to_string()));
     }
@@ -532,5 +596,28 @@ mod tests {
         cfg.port = 1234;
         let state = LlmRunnerState::new(cfg);
         assert_eq!(state.base_url(), "http://192.168.1.5:1234/v1");
+    }
+
+    #[test]
+    fn test_base_url_uses_override_when_set() {
+        let mut cfg = LlmRunnerConfig::default();
+        cfg.runner_type = RUNNER_TYPE_LMS.to_string();
+        cfg.host = "0.0.0.0".to_string(); // lms 模式下 host 不应影响
+        cfg.port = 1234;
+        cfg.base_url = "http://10.0.0.5:8080/v1".to_string();
+        let state = LlmRunnerState::new(cfg);
+        // 用户显式配置的 base_url 优先于派生默认值
+        assert_eq!(state.base_url(), "http://10.0.0.5:8080/v1");
+    }
+
+    #[test]
+    fn test_base_url_lms_default_ignores_host() {
+        let mut cfg = LlmRunnerConfig::default();
+        cfg.runner_type = RUNNER_TYPE_LMS.to_string();
+        cfg.host = "0.0.0.0".to_string();
+        cfg.port = 1234;
+        let state = LlmRunnerState::new(cfg);
+        // 未设置 override 时，lms 派生默认值固定为 127.0.0.1
+        assert_eq!(state.base_url(), "http://127.0.0.1:1234/v1");
     }
 }
