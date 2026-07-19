@@ -383,10 +383,15 @@ pub async fn embed_text(text: String) -> IpcResult<String> {
 
 /// AI 建议标签：根据笔记内容调用 LLM 生成标签建议
 /// 将系统已有标签一并发送给 AI，优先复用已有标签，排除笔记中已存在的标签
+///
+/// `provider_id`：可选，指定使用的 AI provider ID。前端应传入 AI 聊天面板
+/// 当前选中的 provider ID（localStorage `ai_chat.active_provider`），以便
+/// 标签提取与聊天面板共用同一模型。None 或匹配不到时回退到首个 provider。
 #[tauri::command]
 pub async fn suggest_tags(
     state: tauri::State<'_, AppState>,
     content: String,
+    provider_id: Option<String>,
 ) -> IpcResult<Vec<String>> {
     let store = state.store();
 
@@ -425,7 +430,12 @@ pub async fn suggest_tags(
         )
     };
 
-    let ai_text = crate::ai::llm_call::call_first_provider(&store, system_prompt, &user_message)?;
+    let ai_text = crate::ai::llm_call::call_provider(
+        &store,
+        provider_id.as_deref(),
+        system_prompt,
+        &user_message,
+    )?;
 
     // 解析 AI 返回的标签（逗号或顿号分隔），去除 # 前缀，排除笔记中已有的标签
     let suggested: Vec<String> = ai_text

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import MemoEditor from "@/components/MemoEditor";
 import { deriveDefaultCreateTimeFromFilters } from "@/components/MemoEditor/utils/deriveDefaultCreateTime";
+import MemoFilters from "@/components/MemoFilters";
 import MemoView from "@/components/MemoView";
 import PagedMemoList, { getMemoKey } from "@/components/PagedMemoList";
 import { useInstance } from "@/contexts/InstanceContext";
@@ -57,6 +58,9 @@ const Home = () => {
             orderBy={orderBy}
             filter={memoFilter}
             enabled={isInitialized}
+            // MemoFilters 改由本页面在底部 sticky 区的编辑器上方渲染,
+            // 避免在此处重复显示。
+            showMemoFilters={false}
           />
         </div>
         {/*
@@ -66,6 +70,8 @@ const Home = () => {
           - px-0:外层已在 MainLayout 的 px-4 sm:px-6 内,这里不再叠加横向内边距,
             保持与列表(max-w-2xl mx-auto)水平对齐
           - MemoEditor 内部 normal mode 已有 max-h-[50vh] 约束,内容过多时自身滚动
+          - MemoFilters(标签/搜索/过滤条件 chip)显示在编辑器上方,滚动时常驻可见,
+            方便用户随时增删筛选条件
         */}
         <div
           className={cn(
@@ -74,6 +80,7 @@ const Home = () => {
           )}
         >
           <div className="w-full mx-auto max-w-2xl">
+            <MemoFilters className="mb-2" />
             <MemoEditor
               cacheKey="home-memo-editor"
               placeholder={t("editor.any-thoughts")}

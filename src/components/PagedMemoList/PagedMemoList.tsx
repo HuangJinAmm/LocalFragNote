@@ -51,6 +51,12 @@ interface Props {
   enabled?: boolean;
   /** When true, render the inline MemoEditor above the list (e.g. on the Home page). */
   showMemoEditor?: boolean;
+  /**
+   * When true (default), render the active filter chips (MemoFilters) inside
+   * the list. Pages that want to host MemoFilters elsewhere (e.g. above the
+   * sticky composer on Home) pass false to avoid duplicate rendering.
+   */
+  showMemoFilters?: boolean;
 }
 
 function useAutoFetchWhenNotScrollable({
@@ -136,6 +142,7 @@ const PagedMemoList = (props: Props) => {
   const effectiveCompact = compactMode || useGrid;
 
   const showMemoEditor = props.showMemoEditor ?? false;
+  const showMemoFilters = props.showMemoFilters ?? true;
   const defaultCreateTime = useMemo(() => deriveDefaultCreateTimeFromFilters(filters), [filters]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useInfiniteMemos(
@@ -233,10 +240,10 @@ const PagedMemoList = (props: Props) => {
   // the stack uses GRID_GAP so y-spacing matches the grid's x-spacing exactly.
   const hasFilters = filters.length > 0;
   const gridLeading =
-    memoEditor || hasFilters ? (
+    memoEditor || (showMemoFilters && hasFilters) ? (
       <div className="flex w-full flex-col" style={{ gap: GRID_GAP }}>
         {memoEditor}
-        <MemoFilters />
+        {showMemoFilters && <MemoFilters />}
       </div>
     ) : undefined;
 
@@ -295,7 +302,7 @@ const PagedMemoList = (props: Props) => {
           ) : (
             <>
               {memoEditor}
-              <MemoFilters className="mb-2" />
+              {showMemoFilters && <MemoFilters className="mb-2" />}
               {sortedMemoList.map((memo) => props.renderer(memo, { compact: effectiveCompact }))}
               {footer}
             </>

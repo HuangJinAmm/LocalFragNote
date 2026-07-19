@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/select";
 import type { ProviderConfig } from "./types";
 
-const STORAGE_KEY = "ai_chat.active_provider";
+/// localStorage key for the currently selected AI chat provider.
+/// Shared so non-chat features (e.g. suggest_tags) can read the same value
+/// to keep their LLM calls in sync with the chat panel's selection.
+export const AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY = "ai_chat.active_provider";
 
 interface AiChatProviderPickerProps {
   onProviderChange: (id: string | null) => void;
@@ -33,7 +36,7 @@ export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatPro
         if (cancelled) return;
         setProviders(list);
         // 从 localStorage 恢复选择,若不存在则选第一个
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY);
         if (saved && list.some((p) => p.id === saved)) {
           setSelected(saved);
           onProviderChange(saved);
@@ -58,7 +61,7 @@ export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatPro
 
   const handleChange = (value: string) => {
     setSelected(value);
-    localStorage.setItem(STORAGE_KEY, value);
+    localStorage.setItem(AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY, value);
     onProviderChange(value);
   };
 

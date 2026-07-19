@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
+import { AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY } from "@/components/AiChat/AiChatProviderPicker";
 import { useAuth } from "@/contexts/AuthContext";
 import { useInstance } from "@/contexts/InstanceContext";
 import { useNewMemo } from "@/contexts/NewMemoContext";
@@ -10,7 +11,7 @@ import { useLocalStorage } from "@/hooks";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { memoKeys } from "@/hooks/useMemoQueries";
 import { userKeys } from "@/hooks/useUserQueries";
-import { handleError } from "@/lib/error";
+import { getErrorMessage, handleError } from "@/lib/error";
 import { cn } from "@/lib/utils";
 import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
 import { useTranslate } from "@/utils/i18n";
@@ -298,12 +299,20 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
       const existing = extractExistingTags(state.content);
       setTagDialog({ open: true, loading: true, suggested: [], existing });
       try {
-        const suggested = await invoke<string[]>("suggest_tags", { content: state.content });
+        // 读取 AI 聊天面板当前选中的 provider，让标签提取与聊天共用同一模型。
+        // 若未选中（聊天面板未打开过）则传 null，后端会回退到首个 provider。
+        const activeProviderId = localStorage.getItem(AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY);
+        const suggested = await invoke<string[]>("suggest_tags", {
+          content: state.content,
+          providerId: activeProviderId,
+        });
         setTagDialog({ open: true, loading: false, suggested, existing });
       } catch (e) {
         // If AI suggestion fails, fall back to normal save.
         setTagDialog({ open: false, loading: false, suggested: [], existing: [] });
-        toast.error(String(e));
+        // 后端返回的 IpcError 是 {kind, message} 对象，String(e) 会得到 "[object Object]"，
+        // 用 getErrorMessage 正确提取 message 字段。
+        toast.error(getErrorMessage(e, "标签建议失败"));
         void doSave(state.content);
       }
       return;
