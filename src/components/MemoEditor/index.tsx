@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useInstance } from "@/contexts/InstanceContext";
@@ -403,68 +404,87 @@ const MemoEditorImpl: React.FC<MemoEditorProps> = ({
 
   return (
     <>
-      <FocusModeOverlay isActive={isFocusMode} onToggle={handleToggleFocusMode} />
+      {/*
+        Focus mode backdrop MUST be portaled to document.body so that `fixed`
+        positioning is relative to the viewport, not the nearest ancestor with
+        a `backdrop-filter` (Home.tsx wraps MemoEditor in a sticky + backdrop-blur
+        container, which creates a containing block for fixed descendants per
+        CSS spec — without the portal, the overlay would be confined to that
+        bottom sticky bar instead of covering the whole screen).
+      */}
+      {isFocusMode && createPortal(
+        <FocusModeOverlay isActive={isFocusMode} onToggle={handleToggleFocusMode} />,
+        document.body,
+      )}
 
       {/*
         Layout structure:
         - Uses justify-between to push content to top and bottom
-        - In focus mode: becomes fixed with specific spacing, editor grows to fill space
+        - In focus mode: becomes fixed with specific spacing, editor grows to fill space.
+          The container is portaled to document.body for the same containing-block
+          reason as the overlay above.
         - In normal mode: stays relative with max-height constraint
       */}
-      <div
-        className={cn(
-          "group relative w-full flex flex-col justify-between items-start bg-card px-4 pt-3 pb-1 rounded-lg border border-border gap-2",
-          FOCUS_MODE_STYLES.transition,
-          isFocusMode && cn(FOCUS_MODE_STYLES.container.base, FOCUS_MODE_STYLES.container.spacing),
-          className,
-        )}
-      >
-        {/* Formatting toolbar. Always shown in focus mode (with an exit button);
-            in normal mode it appears only when the user toggled it on via the
-            insert menu. */}
-        {(isFocusMode || isFormattingToolbarVisible) && (
-          <FormattingToolbar controllerRef={editorRef} onExit={isFocusMode ? handleToggleFocusMode : undefined} />
-        )}
+      {(() => {
+        const editorNode = (
+          <div
+            className={cn(
+              "group relative w-full flex flex-col justify-between items-start bg-card px-4 pt-3 pb-1 rounded-lg border border-border gap-2",
+              FOCUS_MODE_STYLES.transition,
+              isFocusMode && cn(FOCUS_MODE_STYLES.container.base, FOCUS_MODE_STYLES.container.spacing),
+              className,
+            )}
+          >
+            {/* Formatting toolbar. Always shown in focus mode (with an exit button);
+                in normal mode it appears only when the user toggled it on via the
+                insert menu. */}
+            {(isFocusMode || isFormattingToolbarVisible) && (
+              <FormattingToolbar controllerRef={editorRef} onExit={isFocusMode ? handleToggleFocusMode : undefined} />
+            )}
 
-        {(memoName || (!memo && hasTimestamp)) && (
-          <div className="w-full -mb-1">
-            <TimestampPopover />
+            {(memoName || (!memo && hasTimestamp)) && (
+              <div className="w-full -mb-1">
+                <TimestampPopover />
+              </div>
+            )}
+
+            {/* Editor content grows to fill available space in focus mode */}
+            <EditorContent ref={editorRef} placeholder={placeholder} onSubmit={handleSave} onFileAdded={handleFileAdded} />
+
+            {isAudioRecorderOpen && (audioRecorder.isBusy || isTranscribingAudio) && (
+              <AudioRecorderPanel
+                audioRecorder={{ status: audioRecorder.status, elapsedSeconds: audioRecorder.elapsedSeconds }}
+                mediaStream={audioRecorder.recordingStream}
+                onStop={audioRecorder.stopRecording}
+                onCancel={handleCancelAudioRecording}
+                onTranscribe={handleTranscribeAudioRecording}
+                canTranscribe={canTranscribe}
+                isTranscribing={isTranscribingAudio}
+              />
+            )}
+
+            {/* Metadata and toolbar grouped together at bottom */}
+            <div className="w-full flex flex-col gap-2">
+              <EditorMetadata memoName={memoName} />
+              <EditorToolbar
+                onSave={handleSave}
+                onCancel={onCancel}
+                memoName={memoName}
+                onAudioRecorderClick={handleAudioRecorderClick}
+                isFormattingToolbarVisible={isFormattingToolbarVisible}
+                onToggleFormattingToolbar={handleToggleFormattingToolbar}
+                autoTagEnabled={autoTagEnabled}
+                onToggleAutoTag={handleToggleAutoTag}
+                summaryEnabled={summaryEnabled}
+                onToggleSummary={handleToggleSummary}
+                onFileAdded={handleFileAdded}
+              />
+            </div>
           </div>
-        )}
+        );
 
-        {/* Editor content grows to fill available space in focus mode */}
-        <EditorContent ref={editorRef} placeholder={placeholder} onSubmit={handleSave} onFileAdded={handleFileAdded} />
-
-        {isAudioRecorderOpen && (audioRecorder.isBusy || isTranscribingAudio) && (
-          <AudioRecorderPanel
-            audioRecorder={{ status: audioRecorder.status, elapsedSeconds: audioRecorder.elapsedSeconds }}
-            mediaStream={audioRecorder.recordingStream}
-            onStop={audioRecorder.stopRecording}
-            onCancel={handleCancelAudioRecording}
-            onTranscribe={handleTranscribeAudioRecording}
-            canTranscribe={canTranscribe}
-            isTranscribing={isTranscribingAudio}
-          />
-        )}
-
-        {/* Metadata and toolbar grouped together at bottom */}
-        <div className="w-full flex flex-col gap-2">
-          <EditorMetadata memoName={memoName} />
-          <EditorToolbar
-            onSave={handleSave}
-            onCancel={onCancel}
-            memoName={memoName}
-            onAudioRecorderClick={handleAudioRecorderClick}
-            isFormattingToolbarVisible={isFormattingToolbarVisible}
-            onToggleFormattingToolbar={handleToggleFormattingToolbar}
-            autoTagEnabled={autoTagEnabled}
-            onToggleAutoTag={handleToggleAutoTag}
-            summaryEnabled={summaryEnabled}
-            onToggleSummary={handleToggleSummary}
-            onFileAdded={handleFileAdded}
-          />
-        </div>
-      </div>
+        return isFocusMode ? createPortal(editorNode, document.body) : editorNode;
+      })()}
 
       <TagSuggestionDialog
         open={tagDialog.open}
