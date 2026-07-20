@@ -11,6 +11,34 @@ export interface PendingImage {
   size: number;
 }
 
+/// 会话摘要（列表项）
+export interface ChatSession {
+  id: number;
+  title: string;
+  provider_id: string | null;
+  created_ts: number;
+  updated_ts: number;
+  message_count?: number;
+  preview?: string;
+}
+
+/// 后端返回的消息记录（已落库的）
+export interface ChatMessageRecord {
+  id: number;
+  session_id: number;
+  seq: number;
+  role: "user" | "assistant" | "tool";
+  /// JSON 字符串：string 或 ContentPart[]
+  content: string;
+  /// JSON 字符串：assistant 的 tool_calls 数组
+  tool_calls: string | null;
+  tool_call_id: string | null;
+  /// JSON 字符串：tool 执行结果
+  tool_result: string | null;
+  is_error: boolean;
+  created_ts: number;
+}
+
 /// AI Provider 配置
 export interface ProviderConfig {
   id: string;

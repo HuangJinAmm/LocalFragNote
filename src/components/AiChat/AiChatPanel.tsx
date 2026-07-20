@@ -1,4 +1,10 @@
-import { BotIcon, PlusIcon, SettingsIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  HistoryIcon,
+  PlusIcon,
+  SettingsIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslate } from "@/utils/i18n";
 import { cn } from "@/lib/utils";
@@ -6,11 +12,13 @@ import { registerAiChat } from "./aiChatController";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatMessages } from "./AiChatMessages";
 import { AiChatProviderPicker } from "./AiChatProviderPicker";
+import { AiChatSessionSidebar } from "./AiChatSessionSidebar";
 import { AiChatSettings } from "./AiChatSettings";
 import { useAiChat } from "./hooks";
+import type { ChatSession } from "./types";
 
 const BUTTON_SIZE = 44; // size-11
-const PANEL_WIDTH = 400;
+const PANEL_WIDTH = 480;
 const PANEL_HEIGHT = 560;
 const MARGIN = 16;
 const DRAG_THRESHOLD = 5; // px，小于此距离视为点击
@@ -51,12 +59,51 @@ export function AiChatPanel() {
   const t = useTranslate();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [providerId, setProviderId] = useState<string | null>(null);
   // provider 列表刷新信号:设置保存后递增,触发 picker 重新拉取列表。
   // 解决"添加 provider 后下拉不显示,需关闭面板重开"的问题。
   const [providerRefreshKey, setProviderRefreshKey] = useState(0);
   const [position, setPosition] = useState<Position>(() => loadPosition());
-  const { messages, isStreaming, send, abort, clear } = useAiChat({ providerId });
+  const {
+    messages,
+    isStreaming,
+    currentSessionId,
+    send,
+    abort,
+    clear,
+    switchToSession,
+    newChat,
+  } = useAiChat({ providerId });
+
+  const handleNewChat = useCallback(async () => {
+    // newChat 仅创建/复用 session;若有当前会话且非空,clear 后再创建
+    if (messages.length > 0) {
+      await clear();
+    }
+    await newChat();
+  }, [messages.length, clear, newChat]);
+
+  const handleSelectSession = useCallback(
+    (sessionId: number) => {
+      void switchToSession(sessionId);
+    },
+    [switchToSession],
+  );
+
+  const handleDeleted = useCallback(
+    (deletedId: number) => {
+      if (deletedId === currentSessionId) {
+        // 当前会话被删除：清空视图
+        void clear();
+      }
+    },
+    [currentSessionId, clear],
+  );
+
+  const handleRenamed = useCallback((_session: ChatSession) => {
+    // 重命名不影响当前会话视图，无需额外处理
+  }, []);
 
   // 保持 send 的最新引用，供模块级控制器调用
   const sendRef = useRef(send);
@@ -169,7 +216,19 @@ export function AiChatPanel() {
         style={{ left: effectivePos.x, top: effectivePos.y }}
       >
         {open ? (
-          <div className="flex flex-col w-[400px] h-[560px] rounded-xl border border-border bg-popover shadow-lg overflow-hidden">
+          <div className="flex flex-col w-[480px] h-[560px] rounded-xl border border-border bg-popover shadow-lg overflow-hidden relative">
+            {/* 会话侧栏（绝对定位覆盖在面板上） */}
+            <AiChatSessionSidebar
+              open={sessionsOpen}
+              currentSessionId={currentSessionId}
+              onClose={() => setSessionsOpen(false)}
+              onSelect={handleSelectSession}
+              onNew={() => {
+                void handleNewChat();
+              }}
+              onDeleted={handleDeleted}
+              onRenamed={handleRenamed}
+            />
             {/* Header — 仅图标+标题区域可拖拽 */}
             <div className="flex items-center gap-2 border-b border-border px-3 py-2">
               <div
@@ -179,15 +238,21 @@ export function AiChatPanel() {
                 <BotIcon className="size-4 text-primary" />
                 <span className="font-medium text-sm">{t("aiChat.title")}</span>
               </div>
-              <AiChatProviderPicker
-                onProviderChange={setProviderId}
-                refreshKey={providerRefreshKey}
-              />
               <button
-                onClick={clear}
-                disabled={isStreaming || messages.length === 0}
+                onClick={() => setSessionsOpen(true)}
+                disabled={isStreaming}
+                className="size-7 rounded-md hover:bg-muted flex items-center justify-center disabled:opacity-40 disabled:hover:bg-transparent"
+                aria-label={t("aiChat.sessions")}
+                title={t("aiChat.sessions")}
+              >
+                <HistoryIcon className="size-3.5" />
+              </button>
+              <button
+                onClick={handleNewChat}
+                disabled={isStreaming}
                 className="size-7 rounded-md hover:bg-muted flex items-center justify-center disabled:opacity-40 disabled:hover:bg-transparent"
                 aria-label={t("aiChat.newChat")}
+                title={t("aiChat.newChat")}
               >
                 <PlusIcon className="size-3.5" />
               </button>
@@ -216,6 +281,12 @@ export function AiChatPanel() {
               disabled={!providerId}
               onSend={send}
               onAbort={abort}
+              providerSlot={
+                <AiChatProviderPicker
+                  onProviderChange={setProviderId}
+                  refreshKey={providerRefreshKey}
+                />
+              }
             />
           </div>
         ) : (

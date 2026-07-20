@@ -26,6 +26,8 @@ pub enum IpcError {
     Review(String),
     /// 本地 LLM 启动器错误
     Llm(String),
+    /// 本地 MCP 服务器错误
+    Mcp(String),
 }
 
 impl fmt::Display for IpcError {
@@ -40,6 +42,7 @@ impl fmt::Display for IpcError {
             IpcError::Lan(msg) => write!(f, "Lan: {msg}"),
             IpcError::Review(msg) => write!(f, "Review: {msg}"),
             IpcError::Llm(msg) => write!(f, "Llm: {msg}"),
+            IpcError::Mcp(msg) => write!(f, "Mcp: {msg}"),
         }
     }
 }
@@ -80,6 +83,12 @@ impl From<crate::lan::LanError> for IpcError {
 impl From<crate::llm_runner::LlmRunnerError> for IpcError {
     fn from(e: crate::llm_runner::LlmRunnerError) -> Self {
         IpcError::Llm(e.to_string())
+    }
+}
+
+impl From<crate::mcp::McpError> for IpcError {
+    fn from(e: crate::mcp::McpError) -> Self {
+        IpcError::Mcp(e.to_string())
     }
 }
 

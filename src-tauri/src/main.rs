@@ -7,6 +7,7 @@ mod error;
 mod file_storage;
 pub mod lan;
 mod llm_runner;
+mod mcp;
 mod protocol;
 mod state;
 mod thumbnail;
@@ -79,7 +80,29 @@ fn cleanup_app_resources(app_handle: &tauri::AppHandle) {
     commands::ai_chat::abort_all();
     stop_lan_with_timeout(app_handle);
     stop_llm_runner(app_handle);
+    stop_mcp_with_timeout(app_handle);
     tracing::info!(pid = current_pid(), "退出清理：完成");
+}
+
+/// 退出时停止本地 MCP 服务器
+fn stop_mcp_with_timeout(app_handle: &tauri::AppHandle) {
+    tracing::info!(
+        pid = current_pid(),
+        timeout_secs = EXIT_CLEANUP_TIMEOUT_SECS,
+        "退出清理：开始停止 MCP 模块"
+    );
+
+    match tauri::async_runtime::block_on(async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(EXIT_CLEANUP_TIMEOUT_SECS),
+            mcp::stop_mcp_module(app_handle),
+        )
+        .await
+    }) {
+        Ok(Ok(())) => tracing::info!(pid = current_pid(), "退出清理：MCP 模块已停止"),
+        Ok(Err(e)) => tracing::warn!(pid = current_pid(), "退出清理：MCP 模块停止失败，继续退出: {}", e),
+        Err(_) => tracing::warn!(pid = current_pid(), "退出清理：MCP 模块停止超时，继续退出"),
+    }
 }
 
 /// 退出时停止本地 LLM 服务（前台模式 kill 子进程；守护模式调用 lms server stop）
@@ -184,6 +207,7 @@ fn main() {
                 attachments_dir,
                 lan: std::sync::RwLock::new(None),
                 llm: std::sync::RwLock::new(None),
+                mcp: std::sync::RwLock::new(None),
                 shutdown: std::sync::atomic::AtomicBool::new(false),
                 cleanup_started: std::sync::atomic::AtomicBool::new(false),
             });
@@ -231,6 +255,32 @@ fn main() {
                 });
             }
 
+            // 根据持久化配置决定是否在启动时拉起 MCP 服务器
+            let mcp_auto_start = {
+                let state = app.state::<AppState>();
+                let store = state.store();
+                mcp::load_config(&store).auto_start
+            };
+            if mcp_auto_start {
+                let app_handle = app.handle().clone();
+                tracing::info!("setup: 检测到 MCP 配置 auto_start=true，开始启动 MCP 服务器");
+                tauri::async_runtime::spawn(async move {
+                    match commands::mcp::mcp_start(app_handle.clone()).await {
+                        Ok(status) => {
+                            tracing::info!(
+                                pid = current_pid(),
+                                running = status.running,
+                                endpoint = %status.endpoint_url,
+                                "MCP 服务器启动流程结束"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!("MCP 服务器启动失败（应用其他功能不受影响）: {}", e);
+                        }
+                    }
+                });
+            }
+
             tracing::info!(pid = current_pid(), "setup: end");
             Ok(())
         })
@@ -246,6 +296,7 @@ fn main() {
             commands::memo::delete_memo,
             commands::memo::render_memo_content,
             commands::memo::list_tags,
+            commands::memo::rebuild_tag_table,
             commands::memo::list_memo_timestamps,
             commands::memo::embed_text,
             commands::memo::suggest_tags,
@@ -280,6 +331,13 @@ fn main() {
             commands::ai_chat::ai_abort,
             commands::ai_chat::list_providers,
             commands::ai_chat::save_providers_cmd,
+            commands::chat_session::chat_list_sessions,
+            commands::chat_session::chat_create_session,
+            commands::chat_session::chat_rename_session,
+            commands::chat_session::chat_delete_session,
+            commands::chat_session::chat_list_messages,
+            commands::chat_session::chat_append_message,
+            commands::chat_session::chat_clear_messages,
             // lan discovery
             commands::lan::lan_discover_peers,
             commands::lan::lan_get_status,
@@ -318,6 +376,13 @@ fn main() {
             commands::llm_runner::llm_stop,
             commands::llm_runner::llm_get_status,
             commands::llm_runner::llm_test_connection,
+            // local mcp server
+            commands::mcp::mcp_get_config,
+            commands::mcp::mcp_update_config,
+            commands::mcp::mcp_start,
+            commands::mcp::mcp_stop,
+            commands::mcp::mcp_get_status,
+            commands::mcp::mcp_test_connection,
         ])
         .build(tauri::generate_context!())
         .expect("构建 Tauri 应用时出错")

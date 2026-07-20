@@ -1,5 +1,5 @@
 import { PaperclipIcon, SendIcon, SquareIcon, XIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useTranslate } from "@/utils/i18n";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -13,6 +13,8 @@ interface AiChatComposerProps {
   disabled: boolean;
   onSend: (content: string | ContentPart[]) => void;
   onAbort: () => void;
+  /// 渲染在输入框上方的额外控件（如 Provider 选择器）
+  providerSlot?: ReactNode;
 }
 
 const fileToDataUrl = (file: File): Promise<string> => {
@@ -24,7 +26,13 @@ const fileToDataUrl = (file: File): Promise<string> => {
   });
 };
 
-export function AiChatComposer({ isStreaming, disabled, onSend, onAbort }: AiChatComposerProps) {
+export function AiChatComposer({
+  isStreaming,
+  disabled,
+  onSend,
+  onAbort,
+  providerSlot,
+}: AiChatComposerProps) {
   const t = useTranslate();
   const [text, setText] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -104,6 +112,31 @@ export function AiChatComposer({ isStreaming, disabled, onSend, onAbort }: AiCha
 
   return (
     <form onSubmit={handleSubmit} className="border-t border-border p-2 flex flex-col gap-2">
+      {/* 顶部行：Provider 选择器 + 附件按钮 */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">{providerSlot}</div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handleFiles(Array.from(e.target.files || []));
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+          className="shrink-0 size-9 rounded-md border border-border flex items-center justify-center hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={t("aiChat.attachImage")}
+          title={t("aiChat.attachImage")}
+        >
+          <PaperclipIcon className="size-4" />
+        </button>
+      </div>
       {pendingImages.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {pendingImages.map((img) => (
@@ -125,26 +158,6 @@ export function AiChatComposer({ isStreaming, disabled, onSend, onAbort }: AiCha
         </div>
       )}
       <div className="flex gap-2 items-end">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            handleFiles(Array.from(e.target.files || []));
-            if (fileInputRef.current) fileInputRef.current.value = "";
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          className="shrink-0 size-9 rounded-md border border-border flex items-center justify-center hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label={t("aiChat.attachImage")}
-        >
-          <PaperclipIcon className="size-4" />
-        </button>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}

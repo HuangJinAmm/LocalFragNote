@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { HashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useLanDiscovery } from "@/components/LanDiscovery/hooks";
 import type { AclAccessMode, AclRule, LanStatus } from "@/components/LanDiscovery/types";
+import { cn } from "@/lib/utils";
 import { useTranslate } from "@/utils/i18n";
 import toast from "react-hot-toast";
 
@@ -18,6 +20,7 @@ const LanShareSection = () => {
   const [status, setStatus] = useState<LanStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   useEffect(() => {
     invoke<LanStatus>("lan_get_status")
@@ -29,7 +32,40 @@ const LanShareSection = () => {
     invoke<AclRule[]>("lan_get_acl_rules")
       .then(setRules)
       .catch(console.error);
+    invoke<Array<{ tag: string; count: number }>>("list_tags")
+      .then((tags) => setAvailableTags(tags.map((t) => t.tag).sort((a, b) => a.localeCompare(b))))
+      .catch(console.error);
   }, []);
+
+  // 获取某 peer 当前选中的允许标签（restrict-tags 模式下从 allow 规则中取，
+  // 排除作为完全拒绝哨兵的 "__none__"）。
+  const getPeerAllowedTags = (peerId: string): string[] => {
+    const peerAllow = rules.find(
+      (r) => r.peer_id === peerId && r.mode === "allow" && !r.tags.includes("__none__"),
+    );
+    return peerAllow ? peerAllow.tags : [];
+  };
+
+  const setPeerAllowedTags = (peerId: string, displayName: string, tags: string[]) => {
+    setRules((prev) => {
+      const others = prev.filter((r) => r.peer_id !== peerId);
+      // 保留空 allow 规则,使下拉框保持 restrict-tags 状态;
+      // 后端 filter_memos_for_peer 在 allow_tags 为空时回退到"全部可见",
+      // 因此语义上等同 default-open,但 UI 状态更稳定。
+      return [
+        ...others,
+        { peer_id: peerId, display_name: displayName, mode: "allow" as const, tags },
+      ];
+    });
+  };
+
+  const togglePeerTag = (peerId: string, displayName: string, tag: string) => {
+    const current = getPeerAllowedTags(peerId);
+    const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
+    setPeerAllowedTags(peerId, displayName, next);
+  };
+
+  const sortedAvailableTags = useMemo(() => availableTags, [availableTags]);
 
   const handleSaveDisplayName = async () => {
     try {
@@ -86,8 +122,17 @@ const LanShareSection = () => {
         mode: "allow",
         tags: ["__none__"],
       });
+    } else if (mode === "restrict-tags") {
+      // restrict-tags 默认创建空 allow 规则,等待用户通过 chip 选择允许的标签
+      // 空选择在 setPeerAllowedTags 中等同默认开放,但保留此处的占位规则
+      // 避免下拉切换后立刻回退到 default-open 的视觉抖动
+      newRules.push({
+        peer_id: peerId,
+        display_name: displayName,
+        mode: "allow",
+        tags: [],
+      });
     }
-    // 按标签限制模式还需要标签多选 UI，这里先保留现有占位实现。
     setRules(newRules);
   };
 
@@ -181,9 +226,45 @@ const LanShareSection = () => {
                   </div>
                   <div className="text-xs text-muted-foreground">{peer.peer_id.slice(0, 16)}…</div>
                   {mode === "restrict-tags" && (
-                    <div className="text-xs text-muted-foreground">
-                      {/* TODO: 后续补标签多选 UI */}
-                      标签选择 UI 待补充
+                    <div className="space-y-1.5 pt-1">
+                      <div className="text-xs text-muted-foreground">
+                        {t("lan.settings.restrictTagsHint")}
+                      </div>
+                      {sortedAvailableTags.length === 0 ? (
+                        <div className="text-xs text-muted-foreground italic">
+                          {t("lan.settings.noTagsAvailable")}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {sortedAvailableTags.map((tag) => {
+                            const selected = getPeerAllowedTags(peer.peer_id).includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() =>
+                                  togglePeerTag(peer.peer_id, peer.display_name, tag)
+                                }
+                                className={cn(
+                                  "inline-flex items-center gap-0.5 text-xs leading-5 px-2 py-0.5 rounded-full border transition-colors select-none",
+                                  selected
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
+                                )}
+                              >
+                                <HashIcon className="w-3 h-3" />
+                                {tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {getPeerAllowedTags(peer.peer_id).length === 0 &&
+                        sortedAvailableTags.length > 0 && (
+                          <div className="text-[11px] text-muted-foreground/70 italic">
+                            {t("lan.settings.defaultOpen")}
+                          </div>
+                        )}
                     </div>
                   )}
                 </div>

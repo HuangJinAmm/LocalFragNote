@@ -67,7 +67,7 @@ export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatPro
 
   return (
     <Select value={selected ?? undefined} onValueChange={handleChange}>
-      <SelectTrigger size="sm" className="min-w-[120px]">
+      <SelectTrigger size="sm" className="w-full min-w-[120px]">
         <SelectValue placeholder={t("aiChat.selectProvider")} />
       </SelectTrigger>
       <SelectContent>

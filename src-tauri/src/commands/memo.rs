@@ -339,6 +339,15 @@ pub fn list_tags(state: tauri::State<'_, AppState>) -> IpcResult<Vec<TagWithCoun
         .collect())
 }
 
+/// 重建 tag 元数据表：清空后从所有 NORMAL 状态 memo 重新聚合 #tag 计数。
+/// 用于 V6 升级后回填或手动修正漂移。返回去重后的标签种类数。
+#[tauri::command]
+pub fn rebuild_tag_table(state: tauri::State<'_, AppState>) -> IpcResult<usize> {
+    let store = state.store();
+    let count = store.with_conn(|c| memos_core::tag::rebuild_tag_table(c))?;
+    Ok(count)
+}
+
 /// 获取所有 NORMAL 状态 memo 的创建和更新时间戳，用于热力图统计
 #[derive(Debug, Serialize)]
 pub struct MemoTimestamps {

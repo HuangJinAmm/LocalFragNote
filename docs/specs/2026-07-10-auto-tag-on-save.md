@@ -1,5 +1,9 @@
 # 保存后自动添加标签（方案 A：关键词提取）
 
+> **状态：已被取代（Superseded）**
+> 本 spec 描述的 TextRank 方案未实施。实际实现采用基于 LLM provider 的 `suggest_tags` IPC（见 `src-tauri/src/commands/memo.rs::suggest_tags`），由前端 `TagSuggestionDialog` 让用户挑选后再追加到笔记首行。开关持久化在浏览器 `localStorage` 的 `memos-editor-auto-tag` 键，而非 `app_setting` 表。
+> 原 TextRank 方案仍可作为「离线无 LLM 时」的 fallback 在未来补做。本文件保留作为历史设计参考。
+
 ## 目标
 
 用户保存 memo 后，后台自动从内容中提取关键词作为 `#tag` 追加到 content 末尾，无需用户手动打标签。

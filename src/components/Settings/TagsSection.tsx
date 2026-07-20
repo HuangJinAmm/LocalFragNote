@@ -1,7 +1,9 @@
 import { create } from "@bufbuild/protobuf";
+import { useQueryClient } from "@tanstack/react-query";
 import { isEqual } from "lodash-es";
-import { EyeOffIcon, PaletteIcon, PlusIcon, TagIcon, TrashIcon } from "lucide-react";
+import { EyeOffIcon, PaletteIcon, PlusIcon, RefreshCwIcon, TagIcon, TrashIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "react-hot-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { buildUserSettingName } from "@/helpers/resource-names";
-import { useTagCounts, useUpdateUserSetting } from "@/hooks/useUserQueries";
+import { useTagCounts, useUpdateUserSetting, userKeys } from "@/hooks/useUserQueries";
 import { colorToHex } from "@/lib/color";
 import { isValidTagPattern } from "@/lib/tag";
 import { cn } from "@/lib/utils";
@@ -50,10 +52,12 @@ const toLocalTagMeta = (meta: {
 
 const TagsSection = () => {
   const t = useTranslate();
+  const queryClient = useQueryClient();
   const { currentUser, userTagsSetting, refetchSettings } = useAuth();
   const { mutateAsync: updateUserSetting } = useUpdateUserSetting();
   const { data: tagCounts = {} } = useTagCounts(true);
   const originalSetting = useMemo(() => userTagsSetting ?? create(UserSetting_TagsSettingSchema, {}), [userTagsSetting]);
+  const [rebuilding, setRebuilding] = useState(false);
 
   // Local state: map of tagName → { color, blur } for editing.
   const [localTags, setLocalTags] = useState<Record<string, LocalTagMeta>>(() =>
@@ -153,6 +157,23 @@ const TagsSection = () => {
       updateMask: ["tags"],
     });
     await refetchSettings();
+  };
+
+  const handleRebuildTagTable = async () => {
+    if (!window.confirm(t("setting.tags.rebuild-table-confirm"))) {
+      return;
+    }
+    setRebuilding(true);
+    try {
+      const count = await invoke<number>("rebuild_tag_table");
+      // 刷新所有依赖 tag 计数的查询（侧栏标签列表、统计等）
+      await queryClient.invalidateQueries({ queryKey: userKeys.stats() });
+      toast.success(t("setting.tags.rebuild-table-success", { count }));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setRebuilding(false);
+    }
   };
 
   return (
@@ -275,6 +296,24 @@ const TagsSection = () => {
             </>
           )}
         </SettingList>
+      </SettingGroup>
+
+      <SettingGroup
+        title={t("setting.tags.rebuild-table")}
+        description={t("setting.tags.rebuild-table-description")}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRebuildTagTable}
+            disabled={rebuilding}
+          >
+            <RefreshCwIcon className={cn("w-4 h-4 mr-1.5", rebuilding && "animate-spin")} />
+            {t("setting.tags.rebuild-table")}
+          </Button>
+        }
+      >
+        <></>
       </SettingGroup>
 
       <div className="w-full flex justify-end">

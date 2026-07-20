@@ -35,7 +35,7 @@
 - **AI 聊天面板**：多 Provider 配置（OpenAI 兼容），SSE 流式输出，支持工具调用、附件图片输入、上下文管理。
 - **本地 LLM 启动器**：通过 `llama.cpp` 的 `llama-server` 或 LM Studio 的 `lms` CLI 拉起 OpenAI 兼容的本地端点，支持前台 / 守护两种模式与开机自启。
 - **LAN 发现与分享**：基于 `iroh`（QUIC）+ mDNS，自动发现局域网内其他实例，可预览 / 复制远端笔记与附件，按需无状态查询，不做主动同步。
-- **多语言与主题**：内置 40+ 语言（i18next），3 套主题（默认浅 / 默认深 / 纸面），支持系统跟随。
+- **多语言与主题**：内置 40+ 语言（i18next），5 套主题（默认浅 / 默认深 / 纸面 / 豆绿 / 科幻），支持系统跟随。
 - **导入导出**：JSON 格式批量导入导出，便于备份与迁移。
 
 ---
@@ -293,7 +293,8 @@ npm run dev
 
 - 单一真相源为正文中的 `#tag` 文本，由 `extract_tags` 解析。
 - `tag` 元数据表（V6 迁移）作为缓存与排序索引，触发器自动维护计数。
-- 自动打标签（TextRank 关键词提取）见 `docs/specs/2026-07-10-auto-tag-on-save.md`，由 `app_setting` 中的 `auto_tag.enabled` / `auto_tag.max_tags` 控制。
+- AI 辅助打标签见 `docs/specs/2026-07-10-auto-tag-on-save.md`：保存笔记时由 `suggest_tags` IPC 调用 AI provider 推荐标签，前端弹窗让用户挑选后追加到笔记首行；开关持久化在 `localStorage` 的 `memos-editor-auto-tag` 键。
+- 标签元数据漂移时可通过「设置 → 标签 → 重建标签索引」从所有 NORMAL 笔记重新聚合 #tag 计数。
 
 ### 5. FSRS 复习
 
@@ -332,7 +333,7 @@ npm run dev
 ### 9. 多语言与主题
 
 - 语言资源位于 `src/locales/`，覆盖 40+ 语言。
-- 主题位于 `src/themes/`：`default.css`（浅）、`default-dark.css`（深）、`paper.css`（纸面），配色指南见 `COLOR_GUIDE.md`。
+- 主题位于 `src/themes/`：`default.css`（浅）、`default-dark.css`（深）、`paper.css`（纸面）、`green.css`（豆绿）、`sci-fi.css`（科幻），配色指南见 `COLOR_GUIDE.md`。
 
 ### 10. 导入导出
 

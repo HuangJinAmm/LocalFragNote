@@ -4,10 +4,12 @@
 
 pub mod ai_chat;
 pub mod attachment;
+pub mod chat_session;
 pub mod document_summary;
 pub mod import_export;
 pub mod lan;
 pub mod llm_runner;
+pub mod mcp;
 pub mod memo;
 pub mod memo_relation;
 pub mod reaction;

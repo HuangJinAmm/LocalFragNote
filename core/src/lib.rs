@@ -5,6 +5,7 @@
 
 pub mod attachment;
 pub mod cache;
+pub mod chat_session;
 pub mod error;
 pub mod markdown;
 pub mod memo;

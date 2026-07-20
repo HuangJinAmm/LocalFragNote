@@ -101,3 +101,49 @@ pub fn list_tags(conn: &Connection) -> CoreResult<Vec<(String, i32)>> {
     }
     Ok(out)
 }
+
+/// 重建标签元数据表：清空后从所有 NORMAL 状态 memo 重新聚合。
+///
+/// 适用场景：
+/// - 从旧版本升级到 V6 之后一次性回填
+/// - 怀疑 tag 表与 #tag 真实分布漂移时手动修正
+/// - 评论 memo（parent_id IS NOT NULL）不进入索引，与 CRUD 路径保持一致
+///
+/// 返回重建后的标签种类数。
+pub fn rebuild_tag_table(conn: &Connection) -> CoreResult<usize> {
+    // 清空旧索引
+    conn.execute("DELETE FROM tag", [])?;
+
+    // 聚合所有非评论 memo 的 #tag 计数
+    let now = chrono::Utc::now().timestamp();
+    let mut stmt = conn.prepare(
+        "SELECT content FROM memo
+         WHERE row_status = 'NORMAL' AND parent_id IS NULL",
+    )?;
+    let contents: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    drop(stmt);
+
+    let mut counts: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    for content in &contents {
+        for tag in markdown::extract_tags(content) {
+            *counts.entry(tag).or_insert(0) += 1;
+        }
+    }
+
+    if counts.is_empty() {
+        return Ok(0);
+    }
+
+    let mut insert_stmt = conn.prepare(
+        "INSERT INTO tag (name, count, created_ts, updated_ts)
+         VALUES (?1, ?2, ?3, ?3)",
+    )?;
+    for (name, count) in &counts {
+        insert_stmt.execute(params![name, count, now])?;
+    }
+
+    Ok(counts.len())
+}
