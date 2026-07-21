@@ -1,4 +1,5 @@
-// 调试退出流程时保留 Windows 控制台，便于直接观察后台卡住的位置。
+// release 构建隐藏 Windows 控制台窗口；debug 构建保留控制台便于调试退出流程。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
 mod ai;
