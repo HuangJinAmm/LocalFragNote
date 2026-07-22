@@ -169,6 +169,37 @@ fn ping(state: tauri::State<'_, AppState>) -> String {
     }
 }
 
+/// 使用系统默认浏览器打开外部链接
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    use std::process::Command;
+    // 仅允许 http/https 协议，避免被恶意 markdown 注入任意协议 URI（如 file://、javascript:）
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(format!("不允许的 URL 协议: {}", url));
+    }
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        // start 第一个引号是窗口标题，url 用引号包裹避免被 cmd 解析参数（&、空格等）
+        c.args(["/c", "start", "", &url]);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    cmd.spawn().map_err(|e| format!("打开浏览器失败: {}", e))?;
+    Ok(())
+}
+
 fn main() {
     setup_ort_dylib_path();
     init_tracing();
@@ -287,6 +318,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             ping,
+            open_external_url,
             // memo
             commands::memo::create_memo,
             commands::memo::get_memo,
