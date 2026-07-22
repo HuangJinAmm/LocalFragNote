@@ -25,7 +25,11 @@ interface AiChatProviderPickerProps {
 export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatProviderPickerProps) {
   const t = useTranslate();
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  // 初始值同步读取 localStorage,避免每次重新挂载时短暂显示占位符,
+  // 也避免 Radix Select 在 undefined → string 之间发生 uncontrolled/controlled 切换。
+  const [selected, setSelected] = useState<string | null>(() =>
+    localStorage.getItem(AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY),
+  );
 
   // 加载 provider 列表;refreshKey 变化时重新拉取(设置保存后触发)。
   // onProviderChange 用 ref 持有以避免它成为 useEffect 依赖造成循环重载。
@@ -35,7 +39,7 @@ export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatPro
       .then((list) => {
         if (cancelled) return;
         setProviders(list);
-        // 从 localStorage 恢复选择,若不存在则选第一个
+        // 从 localStorage 恢复选择,若不存在或已失效则选第一个
         const saved = localStorage.getItem(AI_CHAT_ACTIVE_PROVIDER_STORAGE_KEY);
         if (saved && list.some((p) => p.id === saved)) {
           setSelected(saved);
@@ -65,8 +69,10 @@ export function AiChatProviderPicker({ onProviderChange, refreshKey }: AiChatPro
     onProviderChange(value);
   };
 
+  // 使用 "" 而非 undefined 作为空值,确保 Radix Select 始终处于受控模式,
+  // 避免 undefined → string 切换时选中值无法正确渲染。
   return (
-    <Select value={selected ?? undefined} onValueChange={handleChange}>
+    <Select value={selected ?? ""} onValueChange={handleChange}>
       <SelectTrigger size="sm" className="w-full min-w-[120px]">
         <SelectValue placeholder={t("aiChat.selectProvider")} />
       </SelectTrigger>
